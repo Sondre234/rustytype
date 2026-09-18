@@ -15,7 +15,7 @@ use crossterm::{
     },
 };
 
-const SNIPPETS: &[(&str, &str)] = &[
+const RUST_SNIPPETS: &[(&str, &str)] = &[
     (
         "ownership",
         "fn longest<'a>(left: &'a str, right: &'a str) -> &'a str {\n    if left.len() >= right.len() { left } else { right }\n}",
@@ -62,6 +62,63 @@ const SNIPPETS: &[(&str, &str)] = &[
     ),
 ];
 
+const CPP_SNIPPETS: &[(&str, &str)] = &[
+    (
+        "references",
+        "const std::string& longest(const std::string& left, const std::string& right) {\n    return left.size() >= right.size() ? left : right;\n}",
+    ),
+    (
+        "algorithm",
+        "std::vector<int> positive;\nstd::copy_if(values.begin(), values.end(),\n    std::back_inserter(positive), [](int value) { return value > 0; });",
+    ),
+    (
+        "optional",
+        "std::optional<int> parse_port(const std::string& input) {\n    try {\n        return std::stoi(input);\n    } catch (const std::exception&) {\n        return std::nullopt;\n    }\n}",
+    ),
+    (
+        "class",
+        "class User {\npublic:\n    explicit User(std::string name)\n        : name_(std::move(name)), active_(true) {}\n\nprivate:\n    std::string name_;\n    bool active_;\n};",
+    ),
+    (
+        "range loop",
+        "for (const auto& item : items) {\n    if (item.is_ready()) {\n        std::cout << item.name() << '\\n';\n    }\n}",
+    ),
+    (
+        "smart pointer",
+        "auto widget = std::make_unique<Widget>(42);\nif (widget) {\n    widget->render();\n}",
+    ),
+    (
+        "template",
+        "template <typename T>\nT clamp(T value, T low, T high) {\n    return std::min(std::max(value, low), high);\n}",
+    ),
+    (
+        "lambda",
+        "auto total = std::accumulate(values.begin(), values.end(), 0,\n    [](int sum, int value) { return sum + value; });",
+    ),
+];
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Language {
+    Rust,
+    Cpp,
+}
+
+impl Language {
+    fn snippets(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Self::Rust => RUST_SNIPPETS,
+            Self::Cpp => CPP_SNIPPETS,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Rust => "rust",
+            Self::Cpp => "c++",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Screen {
     Typing,
@@ -69,6 +126,7 @@ enum Screen {
 }
 
 struct App {
+    language: Language,
     snippet: usize,
     typed: Vec<char>,
     automatic: Vec<bool>,
@@ -78,13 +136,14 @@ struct App {
 }
 
 impl App {
-    fn new() -> Self {
+    fn new(language: Language) -> Self {
         let seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .subsec_nanos() as usize;
         Self {
-            snippet: seed % SNIPPETS.len(),
+            language,
+            snippet: seed % language.snippets().len(),
             typed: Vec::new(),
             automatic: Vec::new(),
             started: None,
@@ -94,7 +153,7 @@ impl App {
     }
 
     fn target(&self) -> &'static str {
-        SNIPPETS[self.snippet].1
+        self.language.snippets()[self.snippet].1
     }
 
     fn target_chars(&self) -> Vec<char> {
@@ -103,7 +162,7 @@ impl App {
 
     fn reset(&mut self, next: bool) {
         if next {
-            self.snippet = (self.snippet + 1) % SNIPPETS.len();
+            self.snippet = (self.snippet + 1) % self.language.snippets().len();
         }
         self.typed.clear();
         self.automatic.clear();
@@ -209,6 +268,14 @@ impl Drop for TerminalGuard {
 }
 
 fn main() -> io::Result<()> {
+    let language = if std::env::args()
+        .skip(1)
+        .any(|arg| arg == "--cpp" || arg == "-c")
+    {
+        Language::Cpp
+    } else {
+        Language::Rust
+    };
     let previous_hook = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
@@ -217,7 +284,7 @@ fn main() -> io::Result<()> {
     }));
 
     let _guard = TerminalGuard::enter()?;
-    let mut app = App::new();
+    let mut app = App::new(language);
 
     loop {
         draw(&app)?;
@@ -285,7 +352,11 @@ fn draw(app: &App) -> io::Result<()> {
         Print("rusttype"),
         SetAttribute(Attribute::Reset),
         SetForegroundColor(Color::DarkGrey),
-        Print(format!("  / {}", SNIPPETS[app.snippet].0)),
+        Print(format!(
+            "  / {} / {}",
+            app.language.label(),
+            app.language.snippets()[app.snippet].0
+        )),
         ResetColor,
     )?;
 
@@ -393,7 +464,7 @@ fn draw_code(
         } else {
             queue!(
                 out,
-                SetForegroundColor(syntax_color(&target, index)),
+                SetForegroundColor(syntax_color(&target, index, app.language)),
                 Print(ch)
             )?;
         }
@@ -404,7 +475,7 @@ fn draw_code(
 
 use crossterm::style::SetBackgroundColor;
 
-fn syntax_color(chars: &[char], index: usize) -> Color {
+fn syntax_color(chars: &[char], index: usize, language: Language) -> Color {
     let ch = chars[index];
     if ch == '"'
         || chars[..index]
@@ -430,40 +501,104 @@ fn syntax_color(chars: &[char], index: usize) -> Color {
         .position(|c| !c.is_alphanumeric() && *c != '_')
         .map_or(chars.len(), |offset| index + offset);
     let word: String = chars[start..end].iter().collect();
-    if matches!(
-        word.as_str(),
-        "fn" | "let"
-            | "mut"
-            | "struct"
-            | "enum"
-            | "impl"
-            | "match"
-            | "if"
-            | "else"
-            | "async"
-            | "await"
-            | "move"
-            | "pub"
-            | "use"
-            | "return"
-            | "Self"
-            | "self"
-    ) {
+    let keyword = match language {
+        Language::Rust => matches!(
+            word.as_str(),
+            "fn" | "let"
+                | "mut"
+                | "struct"
+                | "enum"
+                | "impl"
+                | "match"
+                | "if"
+                | "else"
+                | "async"
+                | "await"
+                | "move"
+                | "pub"
+                | "use"
+                | "return"
+                | "Self"
+                | "self"
+        ),
+        Language::Cpp => matches!(
+            word.as_str(),
+            "alignas"
+                | "auto"
+                | "bool"
+                | "break"
+                | "case"
+                | "catch"
+                | "class"
+                | "const"
+                | "constexpr"
+                | "continue"
+                | "default"
+                | "delete"
+                | "do"
+                | "else"
+                | "enum"
+                | "explicit"
+                | "false"
+                | "for"
+                | "friend"
+                | "if"
+                | "namespace"
+                | "new"
+                | "noexcept"
+                | "nullptr"
+                | "private"
+                | "protected"
+                | "public"
+                | "return"
+                | "sizeof"
+                | "static"
+                | "struct"
+                | "switch"
+                | "template"
+                | "this"
+                | "throw"
+                | "true"
+                | "try"
+                | "typename"
+                | "using"
+                | "virtual"
+                | "void"
+                | "while"
+        ),
+    };
+    if keyword {
         Color::Cyan
-    } else if matches!(
-        word.as_str(),
-        "String"
-            | "Result"
-            | "Option"
-            | "Some"
-            | "None"
-            | "Ok"
-            | "Err"
-            | "str"
-            | "bool"
-            | "i32"
-            | "u16"
-    ) {
+    } else if match language {
+        Language::Rust => matches!(
+            word.as_str(),
+            "String"
+                | "Result"
+                | "Option"
+                | "Some"
+                | "None"
+                | "Ok"
+                | "Err"
+                | "str"
+                | "bool"
+                | "i32"
+                | "u16"
+        ),
+        Language::Cpp => matches!(
+            word.as_str(),
+            "char"
+                | "double"
+                | "float"
+                | "int"
+                | "long"
+                | "short"
+                | "signed"
+                | "size_t"
+                | "string"
+                | "unsigned"
+                | "vector"
+        ),
+    } {
         Color::Blue
     } else {
         Color::Grey
@@ -476,7 +611,7 @@ mod tests {
 
     #[test]
     fn metrics_count_only_correct_characters() {
-        let mut app = App::new();
+        let mut app = App::new(Language::Rust);
         app.snippet = 0;
         app.typed = app.target().chars().take(4).collect();
         app.automatic = vec![false; 4];
@@ -487,7 +622,7 @@ mod tests {
 
     #[test]
     fn completing_target_opens_results() {
-        let mut app = App::new();
+        let mut app = App::new(Language::Rust);
         app.snippet = 0;
         let target: Vec<char> = app.target().chars().collect();
         while app.screen == Screen::Typing {
@@ -500,7 +635,7 @@ mod tests {
 
     #[test]
     fn newlines_and_indentation_are_automatic() {
-        let mut app = App::new();
+        let mut app = App::new(Language::Rust);
         app.snippet = 0;
         let newline = app.target().find('\n').unwrap();
         for ch in app.target().chars().take(newline).collect::<Vec<_>>() {
@@ -514,5 +649,16 @@ mod tests {
                 .take(5)
                 .all(|automatic| *automatic)
         );
+    }
+
+    #[test]
+    fn cpp_mode_uses_cpp_snippets_and_highlighting() {
+        let mut app = App::new(Language::Cpp);
+        app.snippet = 0;
+        assert!(app.target().contains("std::string"));
+
+        let chars: Vec<char> = "const int value".chars().collect();
+        assert_eq!(syntax_color(&chars, 0, Language::Cpp), Color::Cyan);
+        assert_eq!(syntax_color(&chars, 6, Language::Cpp), Color::Blue);
     }
 }
