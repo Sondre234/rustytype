@@ -97,24 +97,113 @@ const CPP_SNIPPETS: &[(&str, &str)] = &[
     ),
 ];
 
+const C_SNIPPETS: &[(&str, &str)] = &[
+    (
+        "pointers",
+        "const char *longest(const char *left, const char *right) {\n    return strlen(left) >= strlen(right) ? left : right;\n}",
+    ),
+    (
+        "array loop",
+        "int total = 0;\nfor (size_t i = 0; i < length; i++) {\n    if (values[i] > 0) {\n        total += values[i] * 2;\n    }\n}",
+    ),
+    (
+        "parse integer",
+        "char *end;\nlong value = strtol(input, &end, 10);\nif (*end != '\\0') {\n    fprintf(stderr, \"invalid number: %s\\n\", input);\n}",
+    ),
+    (
+        "struct",
+        "struct user {\n    char name[64];\n    bool active;\n};\n\nstruct user user_create(const char *name) {\n    struct user result = { .active = true };\n    snprintf(result.name, sizeof result.name, \"%s\", name);\n    return result;\n}",
+    ),
+    (
+        "enum and switch",
+        "const char *status_name(enum status value) {\n    switch (value) {\n    case STATUS_READY:\n        return \"ready\";\n    case STATUS_WAITING:\n        return \"waiting\";\n    default:\n        return \"unknown\";\n    }\n}",
+    ),
+    (
+        "allocation",
+        "int *values = malloc(count * sizeof *values);\nif (values == NULL) {\n    return EXIT_FAILURE;\n}\n\nfree(values);",
+    ),
+    (
+        "function pointer",
+        "int apply(int value, int (*operation)(int)) {\n    return operation(value);\n}",
+    ),
+    (
+        "linked list",
+        "struct node {\n    int value;\n    struct node *next;\n};\n\nfor (struct node *node = head; node != NULL; node = node->next) {\n    printf(\"%d\\n\", node->value);\n}",
+    ),
+];
+
+const JAVA_SNIPPETS: &[(&str, &str)] = &[
+    (
+        "streams",
+        "int total = values.stream()\n    .filter(value -> value > 0)\n    .mapToInt(value -> value * 2)\n    .sum();",
+    ),
+    (
+        "optional",
+        "Optional<Integer> parsePort(String input) {\n    try {\n        return Optional.of(Integer.parseInt(input));\n    } catch (NumberFormatException error) {\n        return Optional.empty();\n    }\n}",
+    ),
+    (
+        "record",
+        "record User(String name, boolean active) {\n    User(String name) {\n        this(name, true);\n    }\n}",
+    ),
+    (
+        "switch expression",
+        "String description = switch (status) {\n    case READY -> \"ready\";\n    case WAITING -> \"waiting\";\n    default -> \"unknown\";\n};",
+    ),
+    (
+        "enhanced loop",
+        "for (var item : items) {\n    if (item.isReady()) {\n        System.out.println(item.name());\n    }\n}",
+    ),
+    (
+        "generics",
+        "static <T extends Comparable<T>> T max(T left, T right) {\n    return left.compareTo(right) >= 0 ? left : right;\n}",
+    ),
+    (
+        "try with resources",
+        "try (var reader = Files.newBufferedReader(path)) {\n    return reader.lines().toList();\n} catch (IOException error) {\n    throw new UncheckedIOException(error);\n}",
+    ),
+    (
+        "lambda",
+        "var names = users.stream()\n    .filter(User::active)\n    .map(User::name)\n    .sorted()\n    .toList();",
+    ),
+];
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Language {
     Rust,
+    C,
     Cpp,
+    Java,
 }
 
 impl Language {
+    fn from_args<'a>(args: impl IntoIterator<Item = &'a str>) -> Self {
+        let args: Vec<&str> = args.into_iter().collect();
+        if args.iter().any(|arg| matches!(*arg, "--java" | "-j")) {
+            Self::Java
+        } else if args.contains(&"--c") {
+            Self::C
+        } else if args.iter().any(|arg| matches!(*arg, "--cpp" | "-c")) {
+            Self::Cpp
+        } else {
+            Self::Rust
+        }
+    }
+
     fn snippets(self) -> &'static [(&'static str, &'static str)] {
         match self {
             Self::Rust => RUST_SNIPPETS,
+            Self::C => C_SNIPPETS,
             Self::Cpp => CPP_SNIPPETS,
+            Self::Java => JAVA_SNIPPETS,
         }
     }
 
     fn label(self) -> &'static str {
         match self {
             Self::Rust => "rust",
+            Self::C => "c",
             Self::Cpp => "c++",
+            Self::Java => "java",
         }
     }
 }
@@ -268,14 +357,8 @@ impl Drop for TerminalGuard {
 }
 
 fn main() -> io::Result<()> {
-    let language = if std::env::args()
-        .skip(1)
-        .any(|arg| arg == "--cpp" || arg == "-c")
-    {
-        Language::Cpp
-    } else {
-        Language::Rust
-    };
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let language = Language::from_args(args.iter().map(String::as_str));
     let previous_hook = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
@@ -521,6 +604,45 @@ fn syntax_color(chars: &[char], index: usize, language: Language) -> Color {
                 | "Self"
                 | "self"
         ),
+        Language::C => matches!(
+            word.as_str(),
+            "auto"
+                | "bool"
+                | "break"
+                | "case"
+                | "char"
+                | "const"
+                | "continue"
+                | "default"
+                | "do"
+                | "double"
+                | "else"
+                | "enum"
+                | "extern"
+                | "false"
+                | "float"
+                | "for"
+                | "if"
+                | "inline"
+                | "int"
+                | "long"
+                | "register"
+                | "restrict"
+                | "return"
+                | "short"
+                | "signed"
+                | "sizeof"
+                | "static"
+                | "struct"
+                | "switch"
+                | "true"
+                | "typedef"
+                | "union"
+                | "unsigned"
+                | "void"
+                | "volatile"
+                | "while"
+        ),
         Language::Cpp => matches!(
             word.as_str(),
             "alignas"
@@ -566,6 +688,49 @@ fn syntax_color(chars: &[char], index: usize, language: Language) -> Color {
                 | "void"
                 | "while"
         ),
+        Language::Java => matches!(
+            word.as_str(),
+            "abstract"
+                | "boolean"
+                | "break"
+                | "case"
+                | "catch"
+                | "class"
+                | "continue"
+                | "default"
+                | "do"
+                | "else"
+                | "enum"
+                | "extends"
+                | "false"
+                | "final"
+                | "finally"
+                | "for"
+                | "if"
+                | "implements"
+                | "import"
+                | "instanceof"
+                | "interface"
+                | "new"
+                | "null"
+                | "package"
+                | "private"
+                | "protected"
+                | "public"
+                | "record"
+                | "return"
+                | "static"
+                | "super"
+                | "switch"
+                | "this"
+                | "throw"
+                | "throws"
+                | "true"
+                | "try"
+                | "var"
+                | "void"
+                | "while"
+        ),
     };
     if keyword {
         Color::Cyan
@@ -584,6 +749,10 @@ fn syntax_color(chars: &[char], index: usize, language: Language) -> Color {
                 | "i32"
                 | "u16"
         ),
+        Language::C => matches!(
+            word.as_str(),
+            "FILE" | "NULL" | "ptrdiff_t" | "size_t" | "stderr" | "stdin" | "stdout"
+        ),
         Language::Cpp => matches!(
             word.as_str(),
             "char"
@@ -597,6 +766,19 @@ fn syntax_color(chars: &[char], index: usize, language: Language) -> Color {
                 | "string"
                 | "unsigned"
                 | "vector"
+        ),
+        Language::Java => matches!(
+            word.as_str(),
+            "String"
+                | "Integer"
+                | "Long"
+                | "Double"
+                | "Optional"
+                | "List"
+                | "Map"
+                | "Set"
+                | "Object"
+                | "System"
         ),
     } {
         Color::Blue
@@ -660,5 +842,37 @@ mod tests {
         let chars: Vec<char> = "const int value".chars().collect();
         assert_eq!(syntax_color(&chars, 0, Language::Cpp), Color::Cyan);
         assert_eq!(syntax_color(&chars, 6, Language::Cpp), Color::Blue);
+    }
+
+    #[test]
+    fn c_mode_uses_c_snippets_and_highlighting() {
+        let mut app = App::new(Language::C);
+        app.snippet = 0;
+        assert!(app.target().contains("const char *longest"));
+
+        let chars: Vec<char> = "const size_t length".chars().collect();
+        assert_eq!(syntax_color(&chars, 0, Language::C), Color::Cyan);
+        assert_eq!(syntax_color(&chars, 6, Language::C), Color::Blue);
+    }
+
+    #[test]
+    fn java_mode_uses_java_snippets_and_highlighting() {
+        let mut app = App::new(Language::Java);
+        app.snippet = 0;
+        assert!(app.target().contains("values.stream()"));
+
+        let chars: Vec<char> = "public String value".chars().collect();
+        assert_eq!(syntax_color(&chars, 0, Language::Java), Color::Cyan);
+        assert_eq!(syntax_color(&chars, 7, Language::Java), Color::Blue);
+    }
+
+    #[test]
+    fn startup_flags_select_the_language() {
+        assert_eq!(Language::from_args([]), Language::Rust);
+        assert_eq!(Language::from_args(["--c"]), Language::C);
+        assert_eq!(Language::from_args(["--cpp"]), Language::Cpp);
+        assert_eq!(Language::from_args(["-c"]), Language::Cpp);
+        assert_eq!(Language::from_args(["--java"]), Language::Java);
+        assert_eq!(Language::from_args(["-j"]), Language::Java);
     }
 }

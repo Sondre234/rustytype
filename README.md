@@ -16,6 +16,18 @@ separator:
 cargo run --release -- --cpp
 ```
 
+For C syntax, pass `--c` (`-c` remains the C++ shortcut):
+
+```sh
+cargo run --release -- --c
+```
+
+For Java syntax, pass `--java` (or `-j`):
+
+```sh
+cargo run --release -- --java
+```
+
 Start typing to begin the timer. Newlines and leading indentation are inserted
 automatically, and performance stats stay hidden until the exercise is complete.
 Use `Backspace` to fix a mistake, `Ctrl-R` to retry, and `Esc` or `Ctrl-C` to
