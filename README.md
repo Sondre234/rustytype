@@ -1,7 +1,8 @@
 # rusttype
 
 A tiny Monkeytype-inspired terminal trainer for practicing Rust syntax on a new
-keyboard.
+keyboard. Its exercises are adapted from useful standard-library internals such
+as vector growth, binary search, reference counting, and memory allocation.
 
 ## Run
 
@@ -26,6 +27,12 @@ For Java syntax, pass `--java` (or `-j`):
 
 ```sh
 cargo run --release -- --java
+```
+
+For Go syntax, pass `--go` (or `-g`):
+
+```sh
+cargo run --release -- --go
 ```
 
 Start typing to begin the timer. Newlines and leading indentation are inserted

@@ -17,153 +17,176 @@ use crossterm::{
 
 const RUST_SNIPPETS: &[(&str, &str)] = &[
     (
-        "ownership",
-        "fn longest<'a>(left: &'a str, right: &'a str) -> &'a str {\n    if left.len() >= right.len() { left } else { right }\n}",
+        "core / mem::swap",
+        "pub const fn swap<T>(x: &mut T, y: &mut T) {\n    unsafe {\n        let mut tmp = MaybeUninit::<T>::uninit();\n        ptr::copy_nonoverlapping(x, tmp.as_mut_ptr(), 1);\n        ptr::copy(y, x, 1);\n        ptr::copy_nonoverlapping(tmp.as_ptr(), y, 1);\n    }\n}",
     ),
     (
-        "iterator",
-        "let total: i32 = values\n    .iter()\n    .filter(|value| **value > 0)\n    .map(|value| value * 2)\n    .sum();",
+        "core / Option::take",
+        "pub const fn take(&mut self) -> Option<T> {\n    mem::replace(self, None)\n}",
     ),
     (
-        "result",
-        "fn parse_port(input: &str) -> Result<u16, String> {\n    input.parse().map_err(|error| format!(\"invalid port: {error}\"))\n}",
+        "alloc / Vec::push",
+        "pub fn push(&mut self, value: T) {\n    if self.len == self.buf.capacity() {\n        self.buf.grow_one();\n    }\n    unsafe {\n        let end = self.as_mut_ptr().add(self.len);\n        ptr::write(end, value);\n        self.len += 1;\n    }\n}",
     ),
     (
-        "structs",
-        "#[derive(Debug, Clone)]\nstruct User {\n    name: String,\n    active: bool,\n}\n\nimpl User {\n    fn new(name: impl Into<String>) -> Self {\n        Self { name: name.into(), active: true }\n    }\n}",
+        "alloc / Arc::clone",
+        "fn clone(&self) -> Arc<T> {\n    let old_size = self.inner().strong.fetch_add(1, Relaxed);\n    if old_size > MAX_REFCOUNT {\n        abort();\n    }\n    unsafe { Arc::from_inner_in(self.ptr, self.alloc.clone()) }\n}",
     ),
     (
-        "match",
-        "let description = match status {\n    Status::Ready => \"ready\",\n    Status::Waiting(seconds) if seconds > 10 => \"delayed\",\n    Status::Waiting(_) => \"waiting\",\n};",
+        "core / slice::rotate_left",
+        "pub fn rotate_left(&mut self, mid: usize) {\n    assert!(mid <= self.len());\n    let k = self.len() - mid;\n    let p = self.as_mut_ptr();\n    unsafe {\n        ptr::swap_nonoverlapping(p, p.add(mid), cmp::min(mid, k));\n        rotate::ptr_rotate(mid, p.add(mid), k);\n    }\n}",
     ),
     (
-        "async",
-        "async fn fetch(client: &Client, url: &str) -> anyhow::Result<String> {\n    let response = client.get(url).send().await?;\n    Ok(response.text().await?)\n}",
+        "core / slice::binary_search",
+        "pub fn binary_search_by<F>(&self, mut cmp: F) -> Result<usize, usize>\nwhere F: FnMut(&T) -> Ordering {\n    if self.is_empty() { return Err(0); }\n    let mut size = self.len();\n    let mut base = 0;\n    while size > 1 {\n        let half = size / 2;\n        let mid = base + half;\n        base = if cmp(&self[mid]) == Greater { base } else { mid };\n        size -= half;\n    }\n    let result = cmp(&self[base]);\n    if result == Equal { Ok(base) } else { Err(base + (result == Less) as usize) }\n}",
     ),
     (
-        "rusttype / screen",
-        "#[derive(Clone, Copy, Debug, PartialEq)]\nenum Screen {\n    Typing,\n    Results,\n}",
+        "std / thread::spawn",
+        "pub fn spawn<F, T>(f: F) -> JoinHandle<T>\nwhere\n    F: FnOnce() -> T + Send + 'static,\n    T: Send + 'static,\n{\n    Builder::new().spawn(f).expect(\"failed to spawn thread\")\n}",
     ),
     (
-        "rusttype / reset",
-        "fn reset(&mut self, next: bool) {\n    if next {\n        self.snippet = (self.snippet + 1) % SNIPPETS.len();\n    }\n    self.typed.clear();\n    self.started = None;\n    self.screen = Screen::Typing;\n}",
-    ),
-    (
-        "rusttype / terminal",
-        "impl Drop for TerminalGuard {\n    fn drop(&mut self) {\n        let _ = disable_raw_mode();\n        let _ = execute!(io::stdout(), Show, LeaveAlternateScreen, ResetColor);\n    }\n}",
-    ),
-    (
-        "rusttype / input",
-        "match key.code {\n    KeyCode::Backspace => {\n        app.typed.pop();\n        app.automatic.pop();\n    }\n    KeyCode::Char(ch) => app.push(ch),\n    _ => {}\n}",
-    ),
-    (
-        "rusttype / render",
-        "queue!(\n    out,\n    MoveTo(left, title_y),\n    SetForegroundColor(Color::Cyan),\n    SetAttribute(Attribute::Bold),\n    Print(\"rusttype\"),\n    ResetColor,\n)?;",
+        "core / Iterator::find",
+        "fn find<P>(&mut self, predicate: P) -> Option<Self::Item>\nwhere\n    Self: Sized,\n    P: FnMut(&Self::Item) -> bool,\n{\n    self.try_fold(predicate, check).break_value()\n}",
     ),
 ];
 
 const CPP_SNIPPETS: &[(&str, &str)] = &[
     (
-        "references",
-        "const std::string& longest(const std::string& left, const std::string& right) {\n    return left.size() >= right.size() ? left : right;\n}",
+        "utility / std::move",
+        "template <class T>\nconstexpr remove_reference_t<T>&& move(T&& value) noexcept {\n    return static_cast<remove_reference_t<T>&&>(value);\n}",
     ),
     (
-        "algorithm",
-        "std::vector<int> positive;\nstd::copy_if(values.begin(), values.end(),\n    std::back_inserter(positive), [](int value) { return value > 0; });",
+        "utility / std::exchange",
+        "template <class T, class U = T>\nconstexpr T exchange(T& object, U&& value) {\n    T old = std::move(object);\n    object = std::forward<U>(value);\n    return old;\n}",
     ),
     (
-        "optional",
-        "std::optional<int> parse_port(const std::string& input) {\n    try {\n        return std::stoi(input);\n    } catch (const std::exception&) {\n        return std::nullopt;\n    }\n}",
+        "memory / make_unique",
+        "template <class T, class... Args>\nunique_ptr<T> make_unique(Args&&... args) {\n    return unique_ptr<T>(new T(std::forward<Args>(args)...));\n}",
     ),
     (
-        "class",
-        "class User {\npublic:\n    explicit User(std::string name)\n        : name_(std::move(name)), active_(true) {}\n\nprivate:\n    std::string name_;\n    bool active_;\n};",
+        "memory / unique_ptr::reset",
+        "void reset(pointer next = pointer()) noexcept {\n    pointer old = ptr_;\n    ptr_ = next;\n    if (old) {\n        get_deleter()(old);\n    }\n}",
     ),
     (
-        "range loop",
-        "for (const auto& item : items) {\n    if (item.is_ready()) {\n        std::cout << item.name() << '\\n';\n    }\n}",
+        "algorithm / lower_bound",
+        "while (count > 0) {\n    auto step = count / 2;\n    auto middle = first;\n    std::advance(middle, step);\n    if (*middle < value) {\n        first = ++middle;\n        count -= step + 1;\n    } else {\n        count = step;\n    }\n}\nreturn first;",
     ),
     (
-        "smart pointer",
-        "auto widget = std::make_unique<Widget>(42);\nif (widget) {\n    widget->render();\n}",
+        "algorithm / clamp",
+        "template <class T, class Compare>\nconstexpr const T& clamp(const T& value, const T& low,\n                         const T& high, Compare comp) {\n    return comp(value, low) ? low : comp(high, value) ? high : value;\n}",
     ),
     (
-        "template",
-        "template <typename T>\nT clamp(T value, T low, T high) {\n    return std::min(std::max(value, low), high);\n}",
+        "optional / value_or",
+        "template <class U>\nconstexpr T value_or(U&& fallback) const& {\n    static_assert(is_copy_constructible_v<T>);\n    static_assert(is_convertible_v<U&&, T>);\n    return has_value() ? **this : static_cast<T>(std::forward<U>(fallback));\n}",
     ),
     (
-        "lambda",
-        "auto total = std::accumulate(values.begin(), values.end(), 0,\n    [](int sum, int value) { return sum + value; });",
+        "vector / emplace_back",
+        "template <class... Args>\nreference emplace_back(Args&&... args) {\n    if (end_ != cap_) {\n        construct_at(end_, std::forward<Args>(args)...);\n        ++end_;\n    } else {\n        grow_and_emplace(std::forward<Args>(args)...);\n    }\n    return back();\n}",
     ),
 ];
 
 const C_SNIPPETS: &[(&str, &str)] = &[
     (
-        "pointers",
-        "const char *longest(const char *left, const char *right) {\n    return strlen(left) >= strlen(right) ? left : right;\n}",
+        "stdlib / malloc",
+        "void *malloc(size_t size) {\n    size = align_up(size, alignof(max_align_t));\n    for (struct block *b = free_list; b != NULL; b = b->next) {\n        if (b->free && b->size >= size) {\n            split_block(b, size);\n            b->free = false;\n            return b + 1;\n        }\n    }\n    return grow_heap(size);\n}",
     ),
     (
-        "array loop",
-        "int total = 0;\nfor (size_t i = 0; i < length; i++) {\n    if (values[i] > 0) {\n        total += values[i] * 2;\n    }\n}",
+        "stdlib / free",
+        "void free(void *ptr) {\n    if (ptr == NULL) {\n        return;\n    }\n    struct block *block = (struct block *)ptr - 1;\n    block->free = true;\n    coalesce(block);\n}",
     ),
     (
-        "parse integer",
-        "char *end;\nlong value = strtol(input, &end, 10);\nif (*end != '\\0') {\n    fprintf(stderr, \"invalid number: %s\\n\", input);\n}",
+        "string / strlen",
+        "size_t strlen(const char *text) {\n    const char *end = text;\n    while (*end != '\\0') {\n        end++;\n    }\n    return (size_t)(end - text);\n}",
     ),
     (
-        "struct",
-        "struct user {\n    char name[64];\n    bool active;\n};\n\nstruct user user_create(const char *name) {\n    struct user result = { .active = true };\n    snprintf(result.name, sizeof result.name, \"%s\", name);\n    return result;\n}",
+        "string / memcpy",
+        "void *memcpy(void *restrict dst, const void *restrict src, size_t count) {\n    unsigned char *out = dst;\n    const unsigned char *in = src;\n    while (count-- > 0) {\n        *out++ = *in++;\n    }\n    return dst;\n}",
     ),
     (
-        "enum and switch",
-        "const char *status_name(enum status value) {\n    switch (value) {\n    case STATUS_READY:\n        return \"ready\";\n    case STATUS_WAITING:\n        return \"waiting\";\n    default:\n        return \"unknown\";\n    }\n}",
+        "string / memmove",
+        "void *memmove(void *dst, const void *src, size_t count) {\n    unsigned char *out = dst;\n    const unsigned char *in = src;\n    if (out < in) {\n        while (count--) *out++ = *in++;\n    } else {\n        while (count--) out[count] = in[count];\n    }\n    return dst;\n}",
     ),
     (
-        "allocation",
-        "int *values = malloc(count * sizeof *values);\nif (values == NULL) {\n    return EXIT_FAILURE;\n}\n\nfree(values);",
+        "string / strcmp",
+        "int strcmp(const char *left, const char *right) {\n    while (*left && *left == *right) {\n        left++;\n        right++;\n    }\n    return *(const unsigned char *)left\n         - *(const unsigned char *)right;\n}",
     ),
     (
-        "function pointer",
-        "int apply(int value, int (*operation)(int)) {\n    return operation(value);\n}",
+        "stdlib / bsearch",
+        "while (count != 0) {\n    size_t middle = count / 2;\n    const void *entry = base + middle * size;\n    int order = compare(key, entry);\n    if (order == 0) return (void *)entry;\n    if (order > 0) {\n        base = entry + size;\n        count -= middle + 1;\n    } else {\n        count = middle;\n    }\n}\nreturn NULL;",
     ),
     (
-        "linked list",
-        "struct node {\n    int value;\n    struct node *next;\n};\n\nfor (struct node *node = head; node != NULL; node = node->next) {\n    printf(\"%d\\n\", node->value);\n}",
+        "stdlib / calloc",
+        "void *calloc(size_t count, size_t size) {\n    if (size != 0 && count > SIZE_MAX / size) {\n        return NULL;\n    }\n    size_t bytes = count * size;\n    void *ptr = malloc(bytes);\n    if (ptr != NULL) {\n        memset(ptr, 0, bytes);\n    }\n    return ptr;\n}",
     ),
 ];
 
 const JAVA_SNIPPETS: &[(&str, &str)] = &[
     (
-        "streams",
-        "int total = values.stream()\n    .filter(value -> value > 0)\n    .mapToInt(value -> value * 2)\n    .sum();",
+        "Objects.requireNonNull",
+        "public static <T> T requireNonNull(T object, String message) {\n    if (object == null) {\n        throw new NullPointerException(message);\n    }\n    return object;\n}",
     ),
     (
-        "optional",
-        "Optional<Integer> parsePort(String input) {\n    try {\n        return Optional.of(Integer.parseInt(input));\n    } catch (NumberFormatException error) {\n        return Optional.empty();\n    }\n}",
+        "ArrayList.add",
+        "public boolean add(E element) {\n    modCount++;\n    if (size == elementData.length) {\n        elementData = grow();\n    }\n    elementData[size++] = element;\n    return true;\n}",
     ),
     (
-        "record",
-        "record User(String name, boolean active) {\n    User(String name) {\n        this(name, true);\n    }\n}",
+        "ArrayList.grow",
+        "private Object[] grow(int minCapacity) {\n    int oldCapacity = elementData.length;\n    int preferredGrowth = oldCapacity >> 1;\n    int newCapacity = ArraysSupport.newLength(\n        oldCapacity, minCapacity - oldCapacity, preferredGrowth);\n    return elementData = Arrays.copyOf(elementData, newCapacity);\n}",
     ),
     (
-        "switch expression",
-        "String description = switch (status) {\n    case READY -> \"ready\";\n    case WAITING -> \"waiting\";\n    default -> \"unknown\";\n};",
+        "HashMap.hash",
+        "static final int hash(Object key) {\n    int hash;\n    return key == null ? 0 : (hash = key.hashCode()) ^ (hash >>> 16);\n}",
     ),
     (
-        "enhanced loop",
-        "for (var item : items) {\n    if (item.isReady()) {\n        System.out.println(item.name());\n    }\n}",
+        "Arrays.binarySearch",
+        "while (low <= high) {\n    int middle = (low + high) >>> 1;\n    int value = array[middle];\n    if (value < key)\n        low = middle + 1;\n    else if (value > key)\n        high = middle - 1;\n    else\n        return middle;\n}\nreturn -(low + 1);",
     ),
     (
-        "generics",
-        "static <T extends Comparable<T>> T max(T left, T right) {\n    return left.compareTo(right) >= 0 ? left : right;\n}",
+        "Optional.map",
+        "public <U> Optional<U> map(Function<? super T, ? extends U> mapper) {\n    Objects.requireNonNull(mapper);\n    if (isEmpty()) {\n        return empty();\n    }\n    return Optional.ofNullable(mapper.apply(value));\n}",
     ),
     (
-        "try with resources",
-        "try (var reader = Files.newBufferedReader(path)) {\n    return reader.lines().toList();\n} catch (IOException error) {\n    throw new UncheckedIOException(error);\n}",
+        "Collections.swap",
+        "public static void swap(List<?> list, int first, int second) {\n    final List values = list;\n    values.set(first, values.set(second, values.get(first)));\n}",
     ),
     (
-        "lambda",
-        "var names = users.stream()\n    .filter(User::active)\n    .map(User::name)\n    .sorted()\n    .toList();",
+        "ConcurrentHashMap.spread",
+        "static final int spread(int hash) {\n    return (hash ^ (hash >>> 16)) & HASH_BITS;\n}",
+    ),
+];
+
+const GO_SNIPPETS: &[(&str, &str)] = &[
+    (
+        "slices / BinarySearch",
+        "func BinarySearch[S ~[]E, E cmp.Ordered](x S, target E) (int, bool) {\n    n := len(x)\n    i, j := 0, n\n    for i < j {\n        h := int(uint(i+j) >> 1)\n        if x[h] < target {\n            i = h + 1\n        } else {\n            j = h\n        }\n    }\n    return i, i < n && x[i] == target\n}",
+    ),
+    (
+        "slices / Clone",
+        "func Clone[S ~[]E, E any](s S) S {\n    if s == nil {\n        return nil\n    }\n    return append(S([]E{}), s...)\n}",
+    ),
+    (
+        "sync / Once.Do",
+        "func (o *Once) Do(f func()) {\n    if o.done.Load() == 0 {\n        o.doSlow(f)\n    }\n}",
+    ),
+    (
+        "sort / Search",
+        "func Search(n int, f func(int) bool) int {\n    i, j := 0, n\n    for i < j {\n        h := int(uint(i+j) >> 1)\n        if !f(h) {\n            i = h + 1\n        } else {\n            j = h\n        }\n    }\n    return i\n}",
+    ),
+    (
+        "bytes / Clone",
+        "func Clone(b []byte) []byte {\n    if b == nil {\n        return nil\n    }\n    return append([]byte{}, b...)\n}",
+    ),
+    (
+        "maps / Equal",
+        "func Equal[M1, M2 ~map[K]V, K comparable, V comparable](m1 M1, m2 M2) bool {\n    if len(m1) != len(m2) {\n        return false\n    }\n    for k, v1 := range m1 {\n        if v2, ok := m2[k]; !ok || v1 != v2 {\n            return false\n        }\n    }\n    return true\n}",
+    ),
+    (
+        "strings / Join",
+        "func Join(elems []string, sep string) string {\n    switch len(elems) {\n    case 0:\n        return \"\"\n    case 1:\n        return elems[0]\n    }\n    var builder Builder\n    builder.Grow(len(sep) * (len(elems) - 1))\n    builder.WriteString(elems[0])\n    for _, elem := range elems[1:] {\n        builder.WriteString(sep)\n        builder.WriteString(elem)\n    }\n    return builder.String()\n}",
+    ),
+    (
+        "context / WithCancel",
+        "func WithCancel(parent Context) (Context, CancelFunc) {\n    c := withCancel(parent)\n    return c, func() { c.cancel(true, Canceled, nil) }\n}",
     ),
 ];
 
@@ -173,12 +196,15 @@ enum Language {
     C,
     Cpp,
     Java,
+    Go,
 }
 
 impl Language {
     fn from_args<'a>(args: impl IntoIterator<Item = &'a str>) -> Self {
         let args: Vec<&str> = args.into_iter().collect();
-        if args.iter().any(|arg| matches!(*arg, "--java" | "-j")) {
+        if args.iter().any(|arg| matches!(*arg, "--go" | "-g")) {
+            Self::Go
+        } else if args.iter().any(|arg| matches!(*arg, "--java" | "-j")) {
             Self::Java
         } else if args.contains(&"--c") {
             Self::C
@@ -195,6 +221,7 @@ impl Language {
             Self::C => C_SNIPPETS,
             Self::Cpp => CPP_SNIPPETS,
             Self::Java => JAVA_SNIPPETS,
+            Self::Go => GO_SNIPPETS,
         }
     }
 
@@ -204,6 +231,7 @@ impl Language {
             Self::C => "c",
             Self::Cpp => "c++",
             Self::Java => "java",
+            Self::Go => "go",
         }
     }
 }
@@ -587,7 +615,9 @@ fn syntax_color(chars: &[char], index: usize, language: Language) -> Color {
     let keyword = match language {
         Language::Rust => matches!(
             word.as_str(),
-            "fn" | "let"
+            "as" | "const"
+                | "fn"
+                | "let"
                 | "mut"
                 | "struct"
                 | "enum"
@@ -599,7 +629,11 @@ fn syntax_color(chars: &[char], index: usize, language: Language) -> Color {
                 | "await"
                 | "move"
                 | "pub"
+                | "static"
+                | "unsafe"
                 | "use"
+                | "where"
+                | "while"
                 | "return"
                 | "Self"
                 | "self"
@@ -731,6 +765,34 @@ fn syntax_color(chars: &[char], index: usize, language: Language) -> Color {
                 | "void"
                 | "while"
         ),
+        Language::Go => matches!(
+            word.as_str(),
+            "break"
+                | "case"
+                | "chan"
+                | "const"
+                | "continue"
+                | "default"
+                | "defer"
+                | "else"
+                | "fallthrough"
+                | "for"
+                | "func"
+                | "go"
+                | "goto"
+                | "if"
+                | "import"
+                | "interface"
+                | "map"
+                | "package"
+                | "range"
+                | "return"
+                | "select"
+                | "struct"
+                | "switch"
+                | "type"
+                | "var"
+        ),
     };
     if keyword {
         Color::Cyan
@@ -744,14 +806,30 @@ fn syntax_color(chars: &[char], index: usize, language: Language) -> Color {
                 | "None"
                 | "Ok"
                 | "Err"
+                | "Arc"
+                | "Equal"
+                | "Greater"
+                | "JoinHandle"
+                | "Less"
+                | "MaybeUninit"
+                | "Ordering"
                 | "str"
                 | "bool"
                 | "i32"
                 | "u16"
+                | "usize"
         ),
         Language::C => matches!(
             word.as_str(),
-            "FILE" | "NULL" | "ptrdiff_t" | "size_t" | "stderr" | "stdin" | "stdout"
+            "FILE"
+                | "NULL"
+                | "SIZE_MAX"
+                | "max_align_t"
+                | "ptrdiff_t"
+                | "size_t"
+                | "stderr"
+                | "stdin"
+                | "stdout"
         ),
         Language::Cpp => matches!(
             word.as_str(),
@@ -765,6 +843,7 @@ fn syntax_color(chars: &[char], index: usize, language: Language) -> Color {
                 | "size_t"
                 | "string"
                 | "unsigned"
+                | "unique_ptr"
                 | "vector"
         ),
         Language::Java => matches!(
@@ -773,12 +852,47 @@ fn syntax_color(chars: &[char], index: usize, language: Language) -> Color {
                 | "Integer"
                 | "Long"
                 | "Double"
+                | "ArraysSupport"
+                | "Function"
+                | "NullPointerException"
                 | "Optional"
                 | "List"
                 | "Map"
                 | "Set"
                 | "Object"
                 | "System"
+        ),
+        Language::Go => matches!(
+            word.as_str(),
+            "any"
+                | "bool"
+                | "byte"
+                | "comparable"
+                | "complex64"
+                | "complex128"
+                | "error"
+                | "false"
+                | "float32"
+                | "float64"
+                | "int"
+                | "int8"
+                | "int16"
+                | "int32"
+                | "int64"
+                | "nil"
+                | "rune"
+                | "string"
+                | "true"
+                | "uint"
+                | "uint8"
+                | "uint16"
+                | "uint32"
+                | "uint64"
+                | "uintptr"
+                | "Builder"
+                | "CancelFunc"
+                | "Context"
+                | "Once"
         ),
     } {
         Color::Blue
@@ -837,7 +951,7 @@ mod tests {
     fn cpp_mode_uses_cpp_snippets_and_highlighting() {
         let mut app = App::new(Language::Cpp);
         app.snippet = 0;
-        assert!(app.target().contains("std::string"));
+        assert!(app.target().contains("remove_reference_t"));
 
         let chars: Vec<char> = "const int value".chars().collect();
         assert_eq!(syntax_color(&chars, 0, Language::Cpp), Color::Cyan);
@@ -848,7 +962,7 @@ mod tests {
     fn c_mode_uses_c_snippets_and_highlighting() {
         let mut app = App::new(Language::C);
         app.snippet = 0;
-        assert!(app.target().contains("const char *longest"));
+        assert!(app.target().contains("void *malloc"));
 
         let chars: Vec<char> = "const size_t length".chars().collect();
         assert_eq!(syntax_color(&chars, 0, Language::C), Color::Cyan);
@@ -859,11 +973,22 @@ mod tests {
     fn java_mode_uses_java_snippets_and_highlighting() {
         let mut app = App::new(Language::Java);
         app.snippet = 0;
-        assert!(app.target().contains("values.stream()"));
+        assert!(app.target().contains("requireNonNull"));
 
         let chars: Vec<char> = "public String value".chars().collect();
         assert_eq!(syntax_color(&chars, 0, Language::Java), Color::Cyan);
         assert_eq!(syntax_color(&chars, 7, Language::Java), Color::Blue);
+    }
+
+    #[test]
+    fn go_mode_uses_go_snippets_and_highlighting() {
+        let mut app = App::new(Language::Go);
+        app.snippet = 0;
+        assert!(app.target().contains("func BinarySearch"));
+
+        let chars: Vec<char> = "func Search(n int)".chars().collect();
+        assert_eq!(syntax_color(&chars, 0, Language::Go), Color::Cyan);
+        assert_eq!(syntax_color(&chars, 14, Language::Go), Color::Blue);
     }
 
     #[test]
@@ -874,5 +999,7 @@ mod tests {
         assert_eq!(Language::from_args(["-c"]), Language::Cpp);
         assert_eq!(Language::from_args(["--java"]), Language::Java);
         assert_eq!(Language::from_args(["-j"]), Language::Java);
+        assert_eq!(Language::from_args(["--go"]), Language::Go);
+        assert_eq!(Language::from_args(["-g"]), Language::Go);
     }
 }
