@@ -99,16 +99,16 @@ fn play(server: &str, credentials: Option<api::Credentials>) -> io::Result<()> {
                         app.status = Some("submitting...".into());
                         render(&app)?;
                         match api::submit(credentials, &submission) {
-                            Ok(outcome) => api::describe(&outcome),
+                            Ok(outcome) => outcome.describe(),
                             Err(error) => format!("not saved: {}", api::explain(&error)),
                         }
                     }
                     None => "not saved. run `rusttype login` to join the leaderboard".into(),
                 });
             }
-            Action::ShowLeaderboard => match api::leaderboard(server) {
-                Ok(entries) => app.show_leaderboard(entries),
-                Err(error) => app.status = Some(format!("leaderboard unavailable: {}", api::explain(&error))),
+            Action::ShowLeaderboard { snippet } => match api::leaderboard(server, snippet) {
+                Ok(entries) => app.show_leaderboard(snippet, entries),
+                Err(error) => app.leaderboard_failed(snippet, api::explain(&error)),
             },
         }
     }
@@ -134,6 +134,7 @@ fn map_key(key: KeyEvent) -> Option<Key> {
         KeyCode::Char(ch) if !ctrl => Some(Key::Char(ch)),
         KeyCode::Backspace => Some(Key::Backspace),
         KeyCode::Enter => Some(Key::Enter),
+        KeyCode::Tab => Some(Key::Tab),
         _ => None,
     }
 }

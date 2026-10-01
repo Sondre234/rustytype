@@ -106,15 +106,15 @@ impl Connection {
             Action::Submit(submission) => {
                 app.status = Some(match self.user.as_ref().and_then(|player| player.user_id) {
                     Some(user_id) => match service::submit(&self.state.db, user_id, submission).await {
-                        Ok(outcome) => service::describe(&outcome),
+                        Ok(outcome) => outcome.describe(),
                         Err(reason) => format!("not saved: {reason}"),
                     },
                     None => format!("guest run, not saved. ssh <github-login>@{}", self.state.public_host),
                 });
             }
-            Action::ShowLeaderboard => {
-                let entries = service::leaderboard(&self.state.db, 15).await;
-                app.show_leaderboard(entries);
+            Action::ShowLeaderboard { snippet } => {
+                let entries = service::leaderboard(&self.state.db, snippet.map(String::from), 15).await;
+                app.show_leaderboard(snippet, entries);
             }
         }
     }
@@ -235,6 +235,7 @@ pub fn parse_keys(bytes: &[u8]) -> Vec<Key> {
                 }
             }
             0x03 | 0x04 => keys.push(Key::Quit),
+            0x09 => keys.push(Key::Tab),
             0x12 => keys.push(Key::Restart),
             0x7f | 0x08 => keys.push(Key::Backspace),
             b'\r' | b'\n' => keys.push(Key::Enter),
@@ -258,6 +259,7 @@ mod tests {
         );
         assert_eq!(parse_keys(b"\x03"), [Key::Quit]);
         assert_eq!(parse_keys(b"\x12"), [Key::Restart]);
+        assert_eq!(parse_keys(b"\t"), [Key::Tab]);
         assert_eq!(parse_keys(b"\x1b"), [Key::Quit]);
     }
 

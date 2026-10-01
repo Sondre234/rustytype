@@ -5,27 +5,15 @@ use std::{
 
 use rand::RngCore;
 use rusqlite::{Connection, OptionalExtension, params};
-use rusttype_core::{LeaderboardEntry, Verified};
-use serde::Serialize;
+use rusttype_core::{LeaderboardEntry, MIN_RANKED_ACCURACY, Outcome, Verified};
 use sha2::{Digest, Sha256};
 
-/// Runs below this accuracy are stored but never ranked.
-const MIN_RANKED_ACCURACY: f64 = 90.0;
 const SESSION_TTL_MS: i64 = 180 * 24 * 3600 * 1000;
 
 #[derive(Clone, Debug)]
 pub struct User {
     pub id: i64,
     pub login: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct Outcome {
-    pub wpm: f64,
-    pub accuracy: f64,
-    /// `None` when the accuracy was too low to be ranked.
-    pub rank: Option<u32>,
-    pub personal_best: bool,
 }
 
 pub struct Db(Mutex<Connection>);
@@ -70,7 +58,8 @@ impl Db {
                  elapsed_ms INTEGER NOT NULL,
                  created_at INTEGER NOT NULL
              );
-             CREATE INDEX IF NOT EXISTS runs_by_user ON runs(user_id, wpm DESC);",
+             CREATE INDEX IF NOT EXISTS runs_by_user ON runs(user_id, wpm DESC);
+             CREATE INDEX IF NOT EXISTS runs_by_snippet ON runs(snippet, wpm DESC);",
         )?;
         Ok(Self(Mutex::new(conn)))
     }
@@ -118,6 +107,32 @@ impl Db {
             .optional()
     }
 
+    /// A user's best ranked wpm, overall or on one snippet.
+    fn best_wpm(conn: &Connection, user_id: i64, snippet: Option<&str>) -> Result<Option<f64>, String> {
+        conn.query_row(
+            "SELECT MAX(wpm) FROM runs
+             WHERE user_id = ?1 AND accuracy >= ?2 AND (?3 IS NULL OR snippet = ?3)",
+            params![user_id, MIN_RANKED_ACCURACY, snippet],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())
+    }
+
+    /// 1 + the number of other players whose best ranked run beats `best`.
+    fn rank_for(conn: &Connection, user_id: i64, best: f64, snippet: Option<&str>) -> Result<u32, String> {
+        let ahead: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM (
+                     SELECT MAX(wpm) AS best FROM runs
+                     WHERE accuracy >= ?1 AND user_id != ?2 AND (?4 IS NULL OR snippet = ?4)
+                     GROUP BY user_id HAVING best > ?3)",
+                params![MIN_RANKED_ACCURACY, user_id, best, snippet],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(ahead + 1)
+    }
+
     /// Store a verified run. Refuses a user who submits faster than they could
     /// possibly have typed.
     pub fn record_run(&self, user_id: i64, run: &Verified) -> Result<Outcome, String> {
@@ -136,13 +151,9 @@ impl Db {
             return Err("submitting faster than the run took to type".into());
         }
 
-        let best_before: Option<f64> = conn
-            .query_row(
-                "SELECT MAX(wpm) FROM runs WHERE user_id = ?1 AND accuracy >= ?2",
-                params![user_id, MIN_RANKED_ACCURACY],
-                |row| row.get(0),
-            )
-            .map_err(|e| e.to_string())?;
+        let snippet = Some(run.snippet.as_str());
+        let overall_before = Self::best_wpm(&conn, user_id, None)?;
+        let snippet_before = Self::best_wpm(&conn, user_id, snippet)?;
         conn.execute(
             "INSERT INTO runs (user_id, snippet, wpm, accuracy, elapsed_ms, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -151,46 +162,48 @@ impl Db {
         .map_err(|e| e.to_string())?;
 
         let ranked = run.accuracy >= MIN_RANKED_ACCURACY;
-        let rank = if ranked {
-            let best = best_before.map_or(run.wpm, |old| old.max(run.wpm));
-            let ahead: u32 = conn
-                .query_row(
-                    "SELECT COUNT(*) FROM (
-                         SELECT MAX(wpm) AS best FROM runs
-                         WHERE accuracy >= ?1 AND user_id != ?2
-                         GROUP BY user_id HAVING best > ?3)",
-                    params![MIN_RANKED_ACCURACY, user_id, best],
-                    |row| row.get(0),
-                )
-                .map_err(|e| e.to_string())?;
-            Some(ahead + 1)
+        let (rank, snippet_rank) = if ranked {
+            let overall = overall_before.map_or(run.wpm, |old| old.max(run.wpm));
+            let on_snippet = snippet_before.map_or(run.wpm, |old| old.max(run.wpm));
+            (
+                Some(Self::rank_for(&conn, user_id, overall, None)?),
+                Some(Self::rank_for(&conn, user_id, on_snippet, snippet)?),
+            )
         } else {
-            None
+            (None, None)
         };
         Ok(Outcome {
             wpm: run.wpm,
             accuracy: run.accuracy,
             rank,
-            personal_best: ranked && best_before.is_none_or(|old| run.wpm > old),
+            snippet_rank,
+            personal_best: ranked && overall_before.is_none_or(|old| run.wpm > old),
+            snippet_best: ranked && snippet_before.is_none_or(|old| run.wpm > old),
         })
     }
 
-    pub fn leaderboard(&self, limit: u32) -> rusqlite::Result<Vec<LeaderboardEntry>> {
+    /// Each player's best ranked run, best first. `snippet = None` is the
+    /// global board (each row carries the snippet that run was on).
+    pub fn leaderboard(&self, snippet: Option<&str>, limit: u32) -> rusqlite::Result<Vec<LeaderboardEntry>> {
         let conn = self.conn();
         let mut statement = conn.prepare(
-            "SELECT login, wpm, accuracy FROM (
+            "SELECT login, wpm, accuracy, snippet FROM (
                  SELECT u.login AS login, r.wpm AS wpm, r.accuracy AS accuracy,
-                        ROW_NUMBER() OVER (PARTITION BY r.user_id ORDER BY r.wpm DESC) AS n
+                        r.snippet AS snippet,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY r.user_id ORDER BY r.wpm DESC, r.created_at
+                        ) AS n
                  FROM runs r JOIN users u ON u.id = r.user_id
-                 WHERE r.accuracy >= ?1)
-             WHERE n = 1 ORDER BY wpm DESC LIMIT ?2",
+                 WHERE r.accuracy >= ?1 AND (?3 IS NULL OR r.snippet = ?3))
+             WHERE n = 1 ORDER BY wpm DESC, login LIMIT ?2",
         )?;
         statement
-            .query_map(params![MIN_RANKED_ACCURACY, limit], |row| {
+            .query_map(params![MIN_RANKED_ACCURACY, limit, snippet], |row| {
                 Ok(LeaderboardEntry {
                     login: row.get(0)?,
                     wpm: row.get(1)?,
                     accuracy: row.get(2)?,
+                    snippet: row.get(3)?,
                 })
             })?
             .collect()
@@ -201,25 +214,43 @@ impl Db {
 mod tests {
     use super::*;
 
-    fn run(wpm: f64, accuracy: f64) -> Verified {
-        Verified { snippet: "s".into(), wpm, accuracy, elapsed_ms: 0 }
+    fn run(snippet: &str, wpm: f64, accuracy: f64) -> Verified {
+        Verified { snippet: snippet.into(), wpm, accuracy, elapsed_ms: 0 }
+    }
+
+    fn board(db: &Db, snippet: Option<&str>) -> Vec<(String, f64, String)> {
+        db.leaderboard(snippet, 10)
+            .unwrap()
+            .into_iter()
+            .map(|e| (e.login, e.wpm, e.snippet))
+            .collect()
     }
 
     #[test]
-    fn ranks_best_run_per_user_and_ignores_sloppy_runs() {
+    fn global_board_shows_each_players_best_snippet_and_snippet_boards_filter() {
         let db = Db::open(":memory:").unwrap();
         let ada = db.upsert_user(1, "ada").unwrap();
         let bob = db.upsert_user(2, "bob").unwrap();
 
-        assert_eq!(db.record_run(ada.id, &run(80.0, 99.0)).unwrap().rank, Some(1));
-        let bob_first = db.record_run(bob.id, &run(60.0, 97.0)).unwrap();
-        assert_eq!((bob_first.rank, bob_first.personal_best), (Some(2), true));
+        let first = db.record_run(ada.id, &run("a", 80.0, 99.0)).unwrap();
+        assert_eq!((first.rank, first.snippet_rank, first.personal_best), (Some(1), Some(1), true));
+        db.record_run(ada.id, &run("b", 70.0, 98.0)).unwrap();
+        // Bob is slower than ada overall but wins snippet "b".
+        let bob_run = db.record_run(bob.id, &run("b", 75.0, 97.0)).unwrap();
+        assert_eq!((bob_run.rank, bob_run.snippet_rank), (Some(2), Some(1)));
         // Fast but sloppy: stored, never ranked.
-        assert_eq!(db.record_run(bob.id, &run(200.0, 70.0)).unwrap().rank, None);
+        assert_eq!(db.record_run(bob.id, &run("a", 200.0, 70.0)).unwrap().rank, None);
 
-        let board = db.leaderboard(10).unwrap();
-        let order: Vec<_> = board.iter().map(|e| (e.login.as_str(), e.wpm)).collect();
-        assert_eq!(order, [("ada", 80.0), ("bob", 60.0)]);
+        assert_eq!(
+            board(&db, None),
+            [("ada".into(), 80.0, "a".into()), ("bob".into(), 75.0, "b".into())]
+        );
+        assert_eq!(
+            board(&db, Some("b")),
+            [("bob".into(), 75.0, "b".into()), ("ada".into(), 70.0, "b".into())]
+        );
+        assert_eq!(board(&db, Some("a")), [("ada".into(), 80.0, "a".into())]);
+        assert!(board(&db, Some("never-typed")).is_empty());
     }
 
     #[test]

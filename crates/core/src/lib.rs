@@ -3,11 +3,13 @@
 
 mod app;
 mod highlight;
+mod outcome;
 mod render;
 mod replay;
 mod snippets;
 
 pub use app::{Action, App, Key, LeaderboardEntry, Screen};
+pub use outcome::{MIN_RANKED_ACCURACY, Outcome};
 pub use render::draw;
 pub use replay::{Keystroke, MAX_WPM, Reject, Stroke, Submission, Verified, synthetic_run, verify};
 pub use snippets::SNIPPETS;

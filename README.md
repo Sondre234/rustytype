@@ -11,8 +11,9 @@ ssh guest@HOST                   # try it, nothing saved
 
 Newlines and leading indentation are typed for you, stats stay hidden until the
 snippet is done. `Backspace` fixes a mistake, `Ctrl-R` retries, `Esc`/`Ctrl-C`
-quits, and after finishing `Enter`/`n`/`Space` is the next snippet and `l` the
-leaderboard.
+quits, and after finishing `Enter`/`n`/`Space` is the next snippet and `l` opens the
+leaderboard: `Tab` flips between the global board (each row shows which snippet that
+player's best run was on) and the board for the snippet you just typed.
 
 Other languages (C, C++, Java, Go) live on the `multi-language` branch.
 
@@ -41,7 +42,10 @@ crates/server  `rusttype-server`: axum API + SSH server + SQLite
   8 ms, incomplete runs, and submissions faster than the run could have been
   typed. A determined cheater can still script human-looking timings; this
   stops casual forgery, not a dedicated bot.
-- **Ranking:** each player's best run with at least 90% accuracy, by WPM.
+- **Ranking:** each player's best run with at least 90% accuracy, by WPM. Two boards:
+  global (best run across all snippets, tagged with its snippet) and per snippet.
+  `GET /api/leaderboard[?snippet=<title>][&limit=N]` serves both; after each run the
+  server reports your rank on both.
 - **SSH login = GitHub login.** The SSH username is the GitHub login and the key
   you offer must be one of that account's public keys. No passwords, no OAuth
   needed over SSH. The GitHub numeric id is the account key, so renames are safe.

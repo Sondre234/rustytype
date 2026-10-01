@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use rusttype_core::{LeaderboardEntry, Submission, verify};
+use rusttype_core::{LeaderboardEntry, Outcome, Submission, verify};
 
-use crate::db::{Db, Outcome};
+use crate::db::Db;
 
 /// Replay the keystrokes, derive the score ourselves, then store it. The one
 /// path every submission takes, whether it came over HTTP or an SSH session.
@@ -14,17 +14,10 @@ pub async fn submit(db: &Arc<Db>, user_id: i64, submission: Submission) -> Resul
         .map_err(|e| e.to_string())?
 }
 
-pub async fn leaderboard(db: &Arc<Db>, limit: u32) -> Vec<LeaderboardEntry> {
+/// `snippet = None` is the global board.
+pub async fn leaderboard(db: &Arc<Db>, snippet: Option<String>, limit: u32) -> Vec<LeaderboardEntry> {
     let db = Arc::clone(db);
-    tokio::task::spawn_blocking(move || db.leaderboard(limit).unwrap_or_default())
+    tokio::task::spawn_blocking(move || db.leaderboard(snippet.as_deref(), limit).unwrap_or_default())
         .await
         .unwrap_or_default()
-}
-
-pub fn describe(outcome: &Outcome) -> String {
-    match outcome.rank {
-        Some(rank) if outcome.personal_best => format!("new personal best! leaderboard rank #{rank}"),
-        Some(rank) => format!("saved. your best is rank #{rank}"),
-        None => "saved, but under 90% accuracy so it is not ranked".to_string(),
-    }
 }

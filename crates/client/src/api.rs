@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::bail;
-use rusttype_core::{LeaderboardEntry, Submission};
+use rusttype_core::{LeaderboardEntry, Outcome, Submission};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Where scores go unless `--server`, `$RUSTTYPE_SERVER` or a saved login says otherwise.
@@ -12,12 +12,6 @@ pub struct Credentials {
     pub server: String,
     pub token: String,
     pub login: String,
-}
-
-#[derive(Deserialize)]
-pub struct Outcome {
-    pub rank: Option<u32>,
-    pub personal_best: bool,
 }
 
 #[derive(Deserialize)]
@@ -77,16 +71,13 @@ pub fn submit(credentials: &Credentials, submission: &Submission) -> anyhow::Res
     )
 }
 
-pub fn leaderboard(server: &str) -> anyhow::Result<Vec<LeaderboardEntry>> {
-    parse(agent().get(format!("{server}/api/leaderboard?limit=15")).call()?)
-}
-
-pub fn describe(outcome: &Outcome) -> String {
-    match (outcome.rank, outcome.personal_best) {
-        (Some(rank), true) => format!("new personal best! leaderboard rank #{rank}"),
-        (Some(rank), false) => format!("saved. your best is rank #{rank}"),
-        (None, _) => "saved, but under 90% accuracy so it is not ranked".to_string(),
+/// `snippet = None` is the global board.
+pub fn leaderboard(server: &str, snippet: Option<&str>) -> anyhow::Result<Vec<LeaderboardEntry>> {
+    let mut request = agent().get(format!("{server}/api/leaderboard")).query("limit", "15");
+    if let Some(title) = snippet {
+        request = request.query("snippet", title);
     }
+    parse(request.call()?)
 }
 
 /// Keep the context for a failed request on one line.

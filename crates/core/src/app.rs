@@ -12,6 +12,7 @@ pub enum Key {
     Backspace,
     Enter,
     Restart,
+    Tab,
     Quit,
 }
 
@@ -21,7 +22,8 @@ pub enum Action {
     None,
     Quit,
     Submit(Submission),
-    ShowLeaderboard,
+    /// `None` = the global board; `Some(title)` = one snippet's board.
+    ShowLeaderboard { snippet: Option<&'static str> },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -36,6 +38,8 @@ pub struct LeaderboardEntry {
     pub login: String,
     pub wpm: f64,
     pub accuracy: f64,
+    /// The snippet this run was typed on (a player's best run, for the global board).
+    pub snippet: String,
 }
 
 pub struct App {
@@ -51,6 +55,9 @@ pub struct App {
     /// One line under the results, e.g. the submission outcome.
     pub status: Option<String>,
     pub(crate) leaderboard: Vec<LeaderboardEntry>,
+    /// Which board is showing: `None` = global, `Some(title)` = that snippet.
+    pub(crate) board: Option<&'static str>,
+    pub(crate) board_error: Option<String>,
 }
 
 impl App {
@@ -74,11 +81,25 @@ impl App {
             identity: None,
             status: None,
             leaderboard: Vec::new(),
+            board: None,
+            board_error: None,
         }
     }
 
-    pub fn show_leaderboard(&mut self, entries: Vec<LeaderboardEntry>) {
+    /// `snippet` is the board that `entries` belong to, as passed in the
+    /// `Action::ShowLeaderboard` that asked for them.
+    pub fn show_leaderboard(&mut self, snippet: Option<&'static str>, entries: Vec<LeaderboardEntry>) {
+        self.board = snippet;
         self.leaderboard = entries;
+        self.board_error = None;
+        self.screen = Screen::Leaderboard;
+    }
+
+    /// The host could not fetch the board it was asked for; show why instead.
+    pub fn leaderboard_failed(&mut self, snippet: Option<&'static str>, error: String) {
+        self.board = snippet;
+        self.leaderboard.clear();
+        self.board_error = Some(error);
         self.screen = Screen::Leaderboard;
     }
 
@@ -117,6 +138,12 @@ impl App {
             _ => {}
         }
         match self.screen {
+            Screen::Leaderboard if key == Key::Tab => Action::ShowLeaderboard {
+                snippet: match self.board {
+                    Some(_) => None,
+                    None => Some(self.title()),
+                },
+            },
             Screen::Leaderboard => {
                 self.screen = Screen::Results;
                 Action::None
@@ -126,7 +153,7 @@ impl App {
                     self.reset(true);
                     Action::None
                 }
-                Key::Char('l') => Action::ShowLeaderboard,
+                Key::Char('l') => Action::ShowLeaderboard { snippet: None },
                 _ => Action::None,
             },
             Screen::Typing => match key {
@@ -274,6 +301,22 @@ mod tests {
             app.push(ch, now);
         }
         assert!(app.typed.ends_with(&['\n', ' ', ' ', ' ', ' ']));
+    }
+
+    #[test]
+    fn tab_on_the_leaderboard_flips_between_global_and_this_snippet() {
+        let mut app = App::for_snippet(0);
+        let (now, title) = (Instant::now(), app.title());
+        app.show_leaderboard(None, vec![]);
+        assert_eq!(
+            app.handle_key(Key::Tab, now),
+            Action::ShowLeaderboard { snippet: Some(title) }
+        );
+        app.show_leaderboard(Some(title), vec![]);
+        assert_eq!(app.handle_key(Key::Tab, now), Action::ShowLeaderboard { snippet: None });
+        // Anything else leaves the leaderboard.
+        assert_eq!(app.handle_key(Key::Enter, now), Action::None);
+        assert_eq!(app.screen, Screen::Results);
     }
 
     #[test]

@@ -82,25 +82,28 @@ async fn post_score(
 #[derive(Deserialize)]
 struct BoardQuery {
     limit: Option<u32>,
+    /// Snippet title for a per-snippet board; omit for the global board.
+    snippet: Option<String>,
 }
 
 async fn get_leaderboard(State(state): State<Arc<AppState>>, Query(query): Query<BoardQuery>) -> Response {
     let limit = query.limit.unwrap_or(20).clamp(1, 100);
-    Json(service::leaderboard(&state.db, limit).await).into_response()
+    Json(service::leaderboard(&state.db, query.snippet, limit).await).into_response()
 }
 
 async fn home(State(state): State<Arc<AppState>>) -> Html<String> {
-    let rows: String = service::leaderboard(&state.db, 20)
+    let rows: String = service::leaderboard(&state.db, None, 20)
         .await
         .iter()
         .enumerate()
         .map(|(index, entry)| {
             format!(
-                "<tr><td>{}</td><td>{}</td><td>{:.0}</td><td>{:.1}%</td></tr>",
+                "<tr><td>{}</td><td>{}</td><td>{:.0}</td><td>{:.1}%</td><td>{}</td></tr>",
                 index + 1,
                 entry.login, // GitHub logins are [A-Za-z0-9-]; nothing to escape
                 entry.wpm,
-                entry.accuracy
+                entry.accuracy,
+                entry.snippet // always one of our own snippet titles
             )
         })
         .collect();
@@ -114,7 +117,7 @@ async fn home(State(state): State<Arc<AppState>>) -> Html<String> {
          <h1>rusttype</h1><p>Type real Rust. Play over SSH, scores tied to your GitHub account:</p>\
          <p><code>ssh &lt;your-github-login&gt;@{host}</code></p>\
          <p>or try it first: <code>ssh guest@{host}</code></p>\
-         <h2>leaderboard</h2><table><tr><th>#<th>player<th>wpm<th>acc</tr>{rows}</table>"
+         <h2>leaderboard</h2><table><tr><th>#<th>player<th>wpm<th>acc<th>snippet</tr>{rows}</table>"
     ))
 }
 
