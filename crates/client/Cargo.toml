@@ -1,0 +1,13 @@
+[package]
+name = "rusttype"
+version.workspace = true
+edition.workspace = true
+description = "Practice typing real Rust in your terminal, with a GitHub-backed leaderboard"
+
+[dependencies]
+rusttype-core = { path = "../core" }
+anyhow = "1"
+crossterm = "0.29"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "3", features = ["json"] }
