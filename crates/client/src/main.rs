@@ -80,7 +80,7 @@ fn play(server: &str, credentials: Option<api::Credentials>) -> io::Result<()> {
     }));
 
     let _guard = TerminalGuard::enter()?;
-    let mut app = App::new();
+    let mut app = App::new(false);
     app.identity = credentials.as_ref().map(|saved| saved.login.clone());
 
     loop {

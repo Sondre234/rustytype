@@ -4,6 +4,7 @@
 mod app;
 mod highlight;
 mod outcome;
+mod pairs;
 mod render;
 mod replay;
 mod snippets;

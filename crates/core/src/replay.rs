@@ -34,12 +34,16 @@ pub struct Keystroke {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Submission {
     pub snippet: String,
+    /// Older clients only played without autoclose and leave this out.
+    #[serde(default)]
+    pub autoclose: bool,
     pub strokes: Vec<Keystroke>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Verified {
     pub snippet: String,
+    pub autoclose: bool,
     pub wpm: f64,
     pub accuracy: f64,
     pub elapsed_ms: u32,
@@ -64,7 +68,7 @@ pub fn verify(submission: &Submission) -> Result<Verified, Reject> {
         return Err(Reject("timeline is not monotonic"));
     }
 
-    let mut app = App::for_snippet(index);
+    let mut app = App::for_snippet(index, submission.autoclose);
     let base = Instant::now();
     let mut finished = false;
     for keystroke in strokes {
@@ -95,6 +99,7 @@ pub fn verify(submission: &Submission) -> Result<Verified, Reject> {
     }
     Ok(Verified {
         snippet: submission.snippet.clone(),
+        autoclose: submission.autoclose,
         wpm,
         accuracy: app.accuracy(),
         elapsed_ms: app.elapsed().as_millis() as u32,
@@ -104,8 +109,8 @@ pub fn verify(submission: &Submission) -> Result<Verified, Reject> {
 
 /// A perfect run of `title` typed with a constant gap between keystrokes.
 /// Meant for tests and tooling that need a valid `Submission`.
-pub fn synthetic_run(title: &str, gap_ms: u32) -> Option<Submission> {
-    let mut app = App::for_snippet(snippets::index_of(title)?);
+pub fn synthetic_run(title: &str, autoclose: bool, gap_ms: u32) -> Option<Submission> {
+    let mut app = App::for_snippet(snippets::index_of(title)?, autoclose);
     let base = Instant::now();
     let mut strokes = Vec::new();
     let mut ms = 0;
@@ -114,7 +119,7 @@ pub fn synthetic_run(title: &str, gap_ms: u32) -> Option<Submission> {
         strokes.push(Keystroke { ms, stroke: Stroke::Char(ch) });
         let now = base + Duration::from_millis(u64::from(ms));
         if matches!(app.handle_key(Key::Char(ch), now), Action::Submit(_)) {
-            return Some(Submission { snippet: title.into(), strokes });
+            return Some(Submission { snippet: title.into(), autoclose, strokes });
         }
         ms += gap_ms;
     }
@@ -126,7 +131,7 @@ mod tests {
     #[test]
     fn a_recorded_run_replays_to_the_same_score() {
         let title = snippets::SNIPPETS[0].0;
-        let verified = verify(&synthetic_run(title, 120).unwrap()).unwrap();
+        let verified = verify(&synthetic_run(title, false, 120).unwrap()).unwrap();
         assert_eq!(verified.accuracy, 100.0);
         assert!(verified.wpm > 80.0 && verified.wpm < 130.0, "{}", verified.wpm);
     }
@@ -134,14 +139,14 @@ mod tests {
     #[test]
     fn scripted_speed_is_rejected() {
         let title = snippets::SNIPPETS[0].0;
-        assert!(verify(&synthetic_run(title, 1).unwrap()).is_err());
-        assert!(verify(&synthetic_run(title, 30).unwrap()).is_err());
+        assert!(verify(&synthetic_run(title, false, 1).unwrap()).is_err());
+        assert!(verify(&synthetic_run(title, false, 30).unwrap()).is_err());
     }
 
     #[test]
     fn incomplete_or_unknown_runs_are_rejected() {
         let title = snippets::SNIPPETS[0].0;
-        let mut run = synthetic_run(title, 120).unwrap();
+        let mut run = synthetic_run(title, false, 120).unwrap();
         run.strokes.pop();
         assert!(verify(&run).is_err());
         run.snippet = "nope".into();

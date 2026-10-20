@@ -132,7 +132,7 @@ mod tests {
     use crate::{db::Db, github::Github};
 
     async fn post_run(app: &Router, token: Option<&str>, gap_ms: u32) -> (StatusCode, serde_json::Value) {
-        let run = synthetic_run(SNIPPETS[0].0, gap_ms).unwrap();
+        let run = synthetic_run(SNIPPETS[0].0, false, gap_ms).unwrap();
         let mut request = Request::post("/api/scores").header("content-type", "application/json");
         if let Some(token) = token {
             request = request.header("authorization", format!("Bearer {token}"));

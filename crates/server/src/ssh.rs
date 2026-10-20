@@ -157,7 +157,7 @@ impl Handler for Connection {
         if self.player.is_some() {
             return Ok(false);
         }
-        self.player = Some((channel.id(), App::new()));
+        self.player = Some((channel.id(), App::new(false)));
         Ok(true)
     }
 

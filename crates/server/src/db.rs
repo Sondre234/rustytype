@@ -215,7 +215,7 @@ mod tests {
     use super::*;
 
     fn run(snippet: &str, wpm: f64, accuracy: f64) -> Verified {
-        Verified { snippet: snippet.into(), wpm, accuracy, elapsed_ms: 0 }
+        Verified { snippet: snippet.into(), autoclose: false, wpm, accuracy, elapsed_ms: 0 }
     }
 
     fn board(db: &Db, snippet: Option<&str>) -> Vec<(String, f64, String)> {
