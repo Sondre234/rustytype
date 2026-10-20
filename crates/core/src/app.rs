@@ -2,6 +2,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::pairs;
 use crate::replay::{Keystroke, Stroke, Submission};
 use crate::snippets::SNIPPETS;
 
@@ -44,6 +45,11 @@ pub struct LeaderboardEntry {
 
 pub struct App {
     snippet: usize,
+    /// Closing brackets and quotes are typed for the player, like an editor's
+    /// autoclose.
+    autoclose: bool,
+    /// For each closer that autoclose fills in, the index of its opener.
+    opener_of: Vec<Option<usize>>,
     pub(crate) typed: Vec<char>,
     automatic: Vec<bool>,
     started: Option<Instant>,
@@ -61,17 +67,19 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(autoclose: bool) -> Self {
         let seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .subsec_nanos() as usize;
-        Self::for_snippet(seed % SNIPPETS.len())
+        Self::for_snippet(seed % SNIPPETS.len(), autoclose)
     }
 
-    pub fn for_snippet(snippet: usize) -> Self {
+    pub fn for_snippet(snippet: usize, autoclose: bool) -> Self {
         Self {
             snippet,
+            autoclose,
+            opener_of: opener_of(snippet, autoclose),
             typed: Vec::new(),
             automatic: Vec::new(),
             started: None,
@@ -103,6 +111,10 @@ impl App {
         self.screen = Screen::Leaderboard;
     }
 
+    pub fn autoclose(&self) -> bool {
+        self.autoclose
+    }
+
     pub fn title(&self) -> &'static str {
         SNIPPETS[self.snippet].0
     }
@@ -118,6 +130,7 @@ impl App {
     fn reset(&mut self, next: bool) {
         if next {
             self.snippet = (self.snippet + 1) % SNIPPETS.len();
+            self.opener_of = opener_of(self.snippet, self.autoclose);
         }
         self.typed.clear();
         self.automatic.clear();
@@ -184,6 +197,7 @@ impl App {
             self.screen = Screen::Results;
             return Action::Submit(Submission {
                 snippet: self.title().to_string(),
+                autoclose: self.autoclose,
                 strokes: self.log.clone(),
             });
         }
@@ -209,14 +223,15 @@ impl App {
         }
     }
 
-    /// Newlines and leading indentation are typed for the player.
+    /// Newlines and leading indentation are typed for the player, and with
+    /// autoclose so is every closer whose opener they typed.
     fn advance_layout(&mut self) {
         let target = self.target_chars();
         while self.typed.len() < target.len() {
             let index = self.typed.len();
             let at_line_start = index == 0 || target[index - 1] == '\n';
-            if target[index] == '\n' {
-                self.typed.push('\n');
+            if target[index] == '\n' || self.auto_closed(&target, index) {
+                self.typed.push(target[index]);
                 self.automatic.push(true);
             } else if at_line_start && target[index] == ' ' {
                 while self.typed.len() < target.len() && target[self.typed.len()] == ' ' {
@@ -227,6 +242,12 @@ impl App {
                 break;
             }
         }
+    }
+
+    /// Whether autoclose has put the closer at `index` in place, which it does
+    /// as soon as the player types that closer's opener correctly.
+    pub(crate) fn auto_closed(&self, target: &[char], index: usize) -> bool {
+        self.opener_of[index].is_some_and(|opener| self.typed.get(opener) == Some(&target[opener]))
     }
 
     pub fn elapsed(&self) -> Duration {
@@ -272,9 +293,12 @@ impl App {
     }
 }
 
-impl Default for App {
-    fn default() -> Self {
-        Self::new()
+fn opener_of(snippet: usize, autoclose: bool) -> Vec<Option<usize>> {
+    let target: Vec<char> = SNIPPETS[snippet].1.chars().collect();
+    if autoclose {
+        pairs::openers(&target)
+    } else {
+        vec![None; target.len()]
     }
 }
 
@@ -284,7 +308,7 @@ mod tests {
 
     #[test]
     fn metrics_count_only_correct_characters() {
-        let mut app = App::for_snippet(0);
+        let mut app = App::for_snippet(0, false);
         let now = Instant::now();
         for ch in app.target().chars().take(4).collect::<Vec<_>>() {
             app.push(if ch == 'u' { 'x' } else { ch }, now);
@@ -294,7 +318,7 @@ mod tests {
 
     #[test]
     fn newlines_and_indentation_are_automatic() {
-        let mut app = App::for_snippet(0);
+        let mut app = App::for_snippet(0, false);
         let now = Instant::now();
         let first_line = app.target().find('\n').unwrap();
         for ch in app.target().chars().take(first_line).collect::<Vec<_>>() {
@@ -305,7 +329,7 @@ mod tests {
 
     #[test]
     fn tab_on_the_leaderboard_flips_between_global_and_this_snippet() {
-        let mut app = App::for_snippet(0);
+        let mut app = App::for_snippet(0, false);
         let (now, title) = (Instant::now(), app.title());
         app.show_leaderboard(None, vec![]);
         assert_eq!(
@@ -321,7 +345,7 @@ mod tests {
 
     #[test]
     fn backspacing_everything_resets_the_timeline() {
-        let mut app = App::for_snippet(0);
+        let mut app = App::for_snippet(0, false);
         let now = Instant::now();
         app.handle_key(Key::Char('p'), now);
         app.handle_key(Key::Backspace, now);

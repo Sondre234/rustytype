@@ -71,11 +71,14 @@ pub fn submit(credentials: &Credentials, submission: &Submission) -> anyhow::Res
     )
 }
 
-/// `snippet = None` is the global board.
-pub fn leaderboard(server: &str, snippet: Option<&str>) -> anyhow::Result<Vec<LeaderboardEntry>> {
+/// `snippet = None` is the global board; autoclose runs have boards of their own.
+pub fn leaderboard(server: &str, snippet: Option<&str>, autoclose: bool) -> anyhow::Result<Vec<LeaderboardEntry>> {
     let mut request = agent().get(format!("{server}/api/leaderboard")).query("limit", "15");
     if let Some(title) = snippet {
         request = request.query("snippet", title);
+    }
+    if autoclose {
+        request = request.query("autoclose", "true");
     }
     parse(request.call()?)
 }

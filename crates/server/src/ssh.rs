@@ -113,7 +113,8 @@ impl Connection {
                 });
             }
             Action::ShowLeaderboard { snippet } => {
-                let entries = service::leaderboard(&self.state.db, snippet.map(String::from), 15).await;
+                let board = snippet.map(String::from);
+                let entries = service::leaderboard(&self.state.db, board, app.autoclose(), 15).await;
                 app.show_leaderboard(snippet, entries);
             }
         }
@@ -157,7 +158,7 @@ impl Handler for Connection {
         if self.player.is_some() {
             return Ok(false);
         }
-        self.player = Some((channel.id(), App::new()));
+        self.player = Some((channel.id(), App::new(false)));
         Ok(true)
     }
 

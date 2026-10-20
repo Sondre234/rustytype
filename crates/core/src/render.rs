@@ -32,7 +32,9 @@ pub fn draw<W: Write>(out: &mut W, app: &App, width: u16, height: u16) -> io::Re
         SetAttribute(Attribute::Reset),
         SetForegroundColor(Color::DarkGrey),
     )?;
-    if app.screen == Screen::Leaderboard {
+    if app.screen == Screen::Leaderboard && app.autoclose() {
+        queue!(out, Print("  / leaderboard, autoclose"))?;
+    } else if app.screen == Screen::Leaderboard {
         queue!(out, Print("  / leaderboard"))?;
     } else {
         queue!(out, Print(format!("  / {}", app.title())))?;
@@ -88,7 +90,11 @@ pub fn draw<W: Write>(out: &mut W, app: &App, width: u16, height: u16) -> io::Re
         Screen::Leaderboard => queue!(out, Print("tab global / snippet   any other key back   esc quit"))?,
         Screen::Typing => queue!(
             out,
-            Print("newlines + indentation are automatic   ctrl-r restart   esc quit")
+            Print(if app.autoclose() {
+                "newlines, indents + closers are automatic   ctrl-r restart   esc quit"
+            } else {
+                "newlines + indentation are automatic   ctrl-r restart   esc quit"
+            })
         )?,
     }
     queue!(out, ResetColor)?;
@@ -229,6 +235,9 @@ fn draw_code<W: Write>(
                 Print(ch),
                 ResetColor
             )?;
+        } else if app.auto_closed(&target, index) {
+            // Already in place ahead of the cursor, as in an editor.
+            queue!(out, SetForegroundColor(Color::Green), Print(ch))?;
         } else {
             queue!(
                 out,

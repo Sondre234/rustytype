@@ -53,6 +53,7 @@ impl Db {
                  id INTEGER PRIMARY KEY,
                  user_id INTEGER NOT NULL REFERENCES users(id),
                  snippet TEXT NOT NULL,
+                 autoclose INTEGER NOT NULL DEFAULT 0,
                  wpm REAL NOT NULL,
                  accuracy REAL NOT NULL,
                  elapsed_ms INTEGER NOT NULL,
@@ -61,6 +62,15 @@ impl Db {
              CREATE INDEX IF NOT EXISTS runs_by_user ON runs(user_id, wpm DESC);
              CREATE INDEX IF NOT EXISTS runs_by_snippet ON runs(snippet, wpm DESC);",
         )?;
+        // Databases from before autoclose existed hold only runs without it.
+        let has_autoclose: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('runs') WHERE name = 'autoclose'",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_autoclose {
+            conn.execute("ALTER TABLE runs ADD COLUMN autoclose INTEGER NOT NULL DEFAULT 0", [])?;
+        }
         Ok(Self(Mutex::new(conn)))
     }
 
@@ -107,26 +117,39 @@ impl Db {
             .optional()
     }
 
-    /// A user's best ranked wpm, overall or on one snippet.
-    fn best_wpm(conn: &Connection, user_id: i64, snippet: Option<&str>) -> Result<Option<f64>, String> {
+    /// A user's best ranked wpm in one mode, overall or on one snippet.
+    fn best_wpm(
+        conn: &Connection,
+        user_id: i64,
+        autoclose: bool,
+        snippet: Option<&str>,
+    ) -> Result<Option<f64>, String> {
         conn.query_row(
             "SELECT MAX(wpm) FROM runs
-             WHERE user_id = ?1 AND accuracy >= ?2 AND (?3 IS NULL OR snippet = ?3)",
-            params![user_id, MIN_RANKED_ACCURACY, snippet],
+             WHERE user_id = ?1 AND accuracy >= ?2 AND (?3 IS NULL OR snippet = ?3)
+                   AND autoclose = ?4",
+            params![user_id, MIN_RANKED_ACCURACY, snippet, autoclose],
             |row| row.get(0),
         )
         .map_err(|e| e.to_string())
     }
 
     /// 1 + the number of other players whose best ranked run beats `best`.
-    fn rank_for(conn: &Connection, user_id: i64, best: f64, snippet: Option<&str>) -> Result<u32, String> {
+    fn rank_for(
+        conn: &Connection,
+        user_id: i64,
+        autoclose: bool,
+        best: f64,
+        snippet: Option<&str>,
+    ) -> Result<u32, String> {
         let ahead: u32 = conn
             .query_row(
                 "SELECT COUNT(*) FROM (
                      SELECT MAX(wpm) AS best FROM runs
                      WHERE accuracy >= ?1 AND user_id != ?2 AND (?4 IS NULL OR snippet = ?4)
+                           AND autoclose = ?5
                      GROUP BY user_id HAVING best > ?3)",
-                params![MIN_RANKED_ACCURACY, user_id, best, snippet],
+                params![MIN_RANKED_ACCURACY, user_id, best, snippet, autoclose],
                 |row| row.get(0),
             )
             .map_err(|e| e.to_string())?;
@@ -152,12 +175,12 @@ impl Db {
         }
 
         let snippet = Some(run.snippet.as_str());
-        let overall_before = Self::best_wpm(&conn, user_id, None)?;
-        let snippet_before = Self::best_wpm(&conn, user_id, snippet)?;
+        let overall_before = Self::best_wpm(&conn, user_id, run.autoclose, None)?;
+        let snippet_before = Self::best_wpm(&conn, user_id, run.autoclose, snippet)?;
         conn.execute(
-            "INSERT INTO runs (user_id, snippet, wpm, accuracy, elapsed_ms, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![user_id, run.snippet, run.wpm, run.accuracy, run.elapsed_ms, now],
+            "INSERT INTO runs (user_id, snippet, autoclose, wpm, accuracy, elapsed_ms, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![user_id, run.snippet, run.autoclose, run.wpm, run.accuracy, run.elapsed_ms, now],
         )
         .map_err(|e| e.to_string())?;
 
@@ -166,8 +189,8 @@ impl Db {
             let overall = overall_before.map_or(run.wpm, |old| old.max(run.wpm));
             let on_snippet = snippet_before.map_or(run.wpm, |old| old.max(run.wpm));
             (
-                Some(Self::rank_for(&conn, user_id, overall, None)?),
-                Some(Self::rank_for(&conn, user_id, on_snippet, snippet)?),
+                Some(Self::rank_for(&conn, user_id, run.autoclose, overall, None)?),
+                Some(Self::rank_for(&conn, user_id, run.autoclose, on_snippet, snippet)?),
             )
         } else {
             (None, None)
@@ -182,9 +205,14 @@ impl Db {
         })
     }
 
-    /// Each player's best ranked run, best first. `snippet = None` is the
-    /// global board (each row carries the snippet that run was on).
-    pub fn leaderboard(&self, snippet: Option<&str>, limit: u32) -> rusqlite::Result<Vec<LeaderboardEntry>> {
+    /// Each player's best ranked run in one mode, best first. `snippet = None`
+    /// is the global board (each row carries the snippet that run was on).
+    pub fn leaderboard(
+        &self,
+        snippet: Option<&str>,
+        autoclose: bool,
+        limit: u32,
+    ) -> rusqlite::Result<Vec<LeaderboardEntry>> {
         let conn = self.conn();
         let mut statement = conn.prepare(
             "SELECT login, wpm, accuracy, snippet FROM (
@@ -194,11 +222,12 @@ impl Db {
                             PARTITION BY r.user_id ORDER BY r.wpm DESC, r.created_at
                         ) AS n
                  FROM runs r JOIN users u ON u.id = r.user_id
-                 WHERE r.accuracy >= ?1 AND (?3 IS NULL OR r.snippet = ?3))
+                 WHERE r.accuracy >= ?1 AND (?3 IS NULL OR r.snippet = ?3)
+                       AND r.autoclose = ?4)
              WHERE n = 1 ORDER BY wpm DESC, login LIMIT ?2",
         )?;
         statement
-            .query_map(params![MIN_RANKED_ACCURACY, limit, snippet], |row| {
+            .query_map(params![MIN_RANKED_ACCURACY, limit, snippet, autoclose], |row| {
                 Ok(LeaderboardEntry {
                     login: row.get(0)?,
                     wpm: row.get(1)?,
@@ -215,11 +244,11 @@ mod tests {
     use super::*;
 
     fn run(snippet: &str, wpm: f64, accuracy: f64) -> Verified {
-        Verified { snippet: snippet.into(), wpm, accuracy, elapsed_ms: 0 }
+        Verified { snippet: snippet.into(), autoclose: false, wpm, accuracy, elapsed_ms: 0 }
     }
 
     fn board(db: &Db, snippet: Option<&str>) -> Vec<(String, f64, String)> {
-        db.leaderboard(snippet, 10)
+        db.leaderboard(snippet, false, 10)
             .unwrap()
             .into_iter()
             .map(|e| (e.login, e.wpm, e.snippet))

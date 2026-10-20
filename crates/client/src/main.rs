@@ -16,13 +16,14 @@ use crossterm::{
 };
 use rusttype_core::{Action, App, Key, draw};
 
-const USAGE: &str = "usage: rusttype [login | logout] [--server URL]
+const USAGE: &str = "usage: rusttype [login | logout] [--server URL] [--classic]
 
   (no command)   practice typing Rust; scores are submitted if you are logged in
   login          sign in with GitHub (device flow) to appear on the leaderboard
   logout         forget the saved login
 
-  --server URL   leaderboard server (default: $RUSTTYPE_SERVER, else the saved login's)";
+  --server URL   leaderboard server (default: $RUSTTYPE_SERVER, else the saved login's)
+  --classic      type closing brackets and quotes yourself, ranked on separate boards";
 
 struct TerminalGuard;
 
@@ -50,6 +51,7 @@ fn main() -> anyhow::Result<()> {
     if matches!(server_flag, Some(None)) {
         anyhow::bail!("--server needs a URL\n\n{USAGE}");
     }
+    let classic = args.iter().position(|arg| arg == "--classic").map(|at| args.remove(at)).is_some();
     let credentials = login::load();
     let server = server_flag
         .flatten()
@@ -67,11 +69,11 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Some(other) => anyhow::bail!("unknown argument `{other}`\n\n{USAGE}"),
-        None => Ok(play(&server, credentials.filter(|saved| saved.server == server))?),
+        None => Ok(play(&server, credentials.filter(|saved| saved.server == server), !classic)?),
     }
 }
 
-fn play(server: &str, credentials: Option<api::Credentials>) -> io::Result<()> {
+fn play(server: &str, credentials: Option<api::Credentials>, autoclose: bool) -> io::Result<()> {
     let previous_hook = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
@@ -80,7 +82,7 @@ fn play(server: &str, credentials: Option<api::Credentials>) -> io::Result<()> {
     }));
 
     let _guard = TerminalGuard::enter()?;
-    let mut app = App::new();
+    let mut app = App::new(autoclose);
     app.identity = credentials.as_ref().map(|saved| saved.login.clone());
 
     loop {
@@ -106,7 +108,7 @@ fn play(server: &str, credentials: Option<api::Credentials>) -> io::Result<()> {
                     None => "not saved. run `rusttype login` to join the leaderboard".into(),
                 });
             }
-            Action::ShowLeaderboard { snippet } => match api::leaderboard(server, snippet) {
+            Action::ShowLeaderboard { snippet } => match api::leaderboard(server, snippet, app.autoclose()) {
                 Ok(entries) => app.show_leaderboard(snippet, entries),
                 Err(error) => app.leaderboard_failed(snippet, api::explain(&error)),
             },
