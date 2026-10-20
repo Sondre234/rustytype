@@ -32,7 +32,9 @@ pub fn draw<W: Write>(out: &mut W, app: &App, width: u16, height: u16) -> io::Re
         SetAttribute(Attribute::Reset),
         SetForegroundColor(Color::DarkGrey),
     )?;
-    if app.screen == Screen::Leaderboard {
+    if app.screen == Screen::Leaderboard && app.autoclose() {
+        queue!(out, Print("  / leaderboard, autoclose"))?;
+    } else if app.screen == Screen::Leaderboard {
         queue!(out, Print("  / leaderboard"))?;
     } else {
         queue!(out, Print(format!("  / {}", app.title())))?;

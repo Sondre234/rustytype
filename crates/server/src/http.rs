@@ -84,15 +84,18 @@ struct BoardQuery {
     limit: Option<u32>,
     /// Snippet title for a per-snippet board; omit for the global board.
     snippet: Option<String>,
+    /// The boards for runs typed with autoclose.
+    #[serde(default)]
+    autoclose: bool,
 }
 
 async fn get_leaderboard(State(state): State<Arc<AppState>>, Query(query): Query<BoardQuery>) -> Response {
     let limit = query.limit.unwrap_or(20).clamp(1, 100);
-    Json(service::leaderboard(&state.db, query.snippet, limit).await).into_response()
+    Json(service::leaderboard(&state.db, query.snippet, query.autoclose, limit).await).into_response()
 }
 
 async fn home(State(state): State<Arc<AppState>>) -> Html<String> {
-    let rows: String = service::leaderboard(&state.db, None, 20)
+    let rows: String = service::leaderboard(&state.db, None, false, 20)
         .await
         .iter()
         .enumerate()

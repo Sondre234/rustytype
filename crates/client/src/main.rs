@@ -106,7 +106,7 @@ fn play(server: &str, credentials: Option<api::Credentials>) -> io::Result<()> {
                     None => "not saved. run `rusttype login` to join the leaderboard".into(),
                 });
             }
-            Action::ShowLeaderboard { snippet } => match api::leaderboard(server, snippet) {
+            Action::ShowLeaderboard { snippet } => match api::leaderboard(server, snippet, app.autoclose()) {
                 Ok(entries) => app.show_leaderboard(snippet, entries),
                 Err(error) => app.leaderboard_failed(snippet, api::explain(&error)),
             },

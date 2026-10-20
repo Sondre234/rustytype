@@ -17,7 +17,8 @@ crates/server  `rusttype-server`: axum API + SSH server + SQLite
 - **Ranking:** each player's best run with at least 90% accuracy, by WPM. Two boards:
   global (best run across all snippets, tagged with its snippet) and per snippet.
   `GET /api/leaderboard[?snippet=<title>][&limit=N]` serves both; after each run the
-  server reports your rank on both.
+  server reports your rank on both. Runs typed with autoclose (closing brackets
+  filled in) are ranked on a separate set of boards, `&autoclose=true`.
 - **SSH login = GitHub login.** The SSH username is the GitHub login and the key
   you offer must be one of that account's public keys. No passwords, no OAuth
   needed over SSH. The GitHub numeric id is the account key, so renames are safe.

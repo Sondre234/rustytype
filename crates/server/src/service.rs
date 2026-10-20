@@ -14,10 +14,10 @@ pub async fn submit(db: &Arc<Db>, user_id: i64, submission: Submission) -> Resul
         .map_err(|e| e.to_string())?
 }
 
-/// `snippet = None` is the global board.
-pub async fn leaderboard(db: &Arc<Db>, snippet: Option<String>, limit: u32) -> Vec<LeaderboardEntry> {
+/// `snippet = None` is the global board; autoclose runs have boards of their own.
+pub async fn leaderboard(db: &Arc<Db>, snippet: Option<String>, autoclose: bool, limit: u32) -> Vec<LeaderboardEntry> {
     let db = Arc::clone(db);
-    tokio::task::spawn_blocking(move || db.leaderboard(snippet.as_deref(), limit).unwrap_or_default())
+    tokio::task::spawn_blocking(move || db.leaderboard(snippet.as_deref(), autoclose, limit).unwrap_or_default())
         .await
         .unwrap_or_default()
 }
