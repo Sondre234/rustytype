@@ -1,9 +1,0 @@
-[package]
-name = "rusttype"
-version.workspace = true
-edition.workspace = true
-description = "Practice typing real Rust in your terminal"
-
-[dependencies]
-rusttype-core = { path = "../core" }
-crossterm = "0.29"

@@ -213,14 +213,6 @@ name = "rusttype"
 version = "0.1.0"
 dependencies = [
  "crossterm",
- "rusttype-core",
-]
-
-[[package]]
-name = "rusttype-core"
-version = "0.1.0"
-dependencies = [
- "crossterm",
 ]
 
 [[package]]

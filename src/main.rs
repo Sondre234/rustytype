@@ -1,3 +1,9 @@
+mod app;
+mod highlight;
+mod pairs;
+mod render;
+mod snippets;
+
 use std::{
     io::{self, Write},
     panic,
@@ -11,7 +17,9 @@ use crossterm::{
     style::ResetColor,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use rusttype_core::{Action, App, Key, draw};
+
+use app::{Action, App, Key};
+use render::draw;
 
 const USAGE: &str = "usage: rusttype [--classic]
 

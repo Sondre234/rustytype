@@ -1,7 +1,8 @@
-[workspace]
-resolver = "3"
-members = ["crates/core", "crates/client"]
-
-[workspace.package]
+[package]
+name = "rusttype"
 version = "0.1.0"
 edition = "2024"
+description = "Practice typing real Rust in your terminal"
+
+[dependencies]
+crossterm = "0.29"
