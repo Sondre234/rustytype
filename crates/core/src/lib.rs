@@ -9,7 +9,7 @@ mod render;
 mod replay;
 mod snippets;
 
-pub use app::{Action, App, Key, LeaderboardEntry, Screen};
+pub use app::{Action, App, Key, Screen};
 pub use outcome::{MIN_RANKED_ACCURACY, Outcome};
 pub use render::draw;
 pub use replay::{Keystroke, MAX_WPM, Reject, Stroke, Submission, Verified, synthetic_run, verify};

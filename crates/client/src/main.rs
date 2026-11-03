@@ -69,11 +69,11 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Some(other) => anyhow::bail!("unknown argument `{other}`\n\n{USAGE}"),
-        None => Ok(play(&server, credentials.filter(|saved| saved.server == server), !classic)?),
+        None => Ok(play(credentials.filter(|saved| saved.server == server), !classic)?),
     }
 }
 
-fn play(server: &str, credentials: Option<api::Credentials>, autoclose: bool) -> io::Result<()> {
+fn play(credentials: Option<api::Credentials>, autoclose: bool) -> io::Result<()> {
     let previous_hook = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
@@ -108,10 +108,6 @@ fn play(server: &str, credentials: Option<api::Credentials>, autoclose: bool) ->
                     None => "not saved. run `rusttype login` to join the leaderboard".into(),
                 });
             }
-            Action::ShowLeaderboard { snippet } => match api::leaderboard(server, snippet, app.autoclose()) {
-                Ok(entries) => app.show_leaderboard(snippet, entries),
-                Err(error) => app.leaderboard_failed(snippet, api::explain(&error)),
-            },
         }
     }
     Ok(())
@@ -136,7 +132,6 @@ fn map_key(key: KeyEvent) -> Option<Key> {
         KeyCode::Char(ch) if !ctrl => Some(Key::Char(ch)),
         KeyCode::Backspace => Some(Key::Backspace),
         KeyCode::Enter => Some(Key::Enter),
-        KeyCode::Tab => Some(Key::Tab),
         _ => None,
     }
 }
