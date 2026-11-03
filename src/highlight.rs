@@ -1,4 +1,4 @@
-use crossterm::style::Color;
+use crate::ansi::Color;
 
 pub(crate) fn syntax_color(chars: &[char], index: usize) -> Color {
     let ch = chars[index];
