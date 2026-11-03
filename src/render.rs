@@ -1,74 +1,58 @@
 use std::io::{self, Write};
 
-use crossterm::{
-    cursor::MoveTo,
-    queue,
-    style::{
-        Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor,
-        SetForegroundColor,
-    },
-    terminal::{Clear, ClearType},
-};
-
+use crate::ansi::{BOLD, Bg, CLEAR, Color, Fg, MoveTo, RESET, UNDERLINE};
 use crate::app::{App, Screen};
 use crate::highlight::syntax_color;
 
 /// Draw one full frame for a terminal of the given size.
 pub fn draw<W: Write>(out: &mut W, app: &App, width: u16, height: u16) -> io::Result<()> {
-    queue!(out, MoveTo(0, 0), Clear(ClearType::All))?;
+    write!(out, "{}{CLEAR}", MoveTo(0, 0))?;
 
     let content_width = width.saturating_sub(8).min(92);
     let left = width.saturating_sub(content_width) / 2;
     let title_y = 2;
-    queue!(
+    write!(
         out,
+        "{}{}{BOLD}rusttype{RESET}{}  / {}{RESET}",
         MoveTo(left, title_y),
-        SetForegroundColor(Color::Cyan),
-        SetAttribute(Attribute::Bold),
-        Print("rusttype"),
-        SetAttribute(Attribute::Reset),
-        SetForegroundColor(Color::DarkGrey),
+        Fg(Color::Cyan),
+        Fg(Color::DarkGrey),
+        app.title()
     )?;
-    queue!(out, Print(format!("  / {}", app.title())), ResetColor)?;
 
     if app.screen == Screen::Results {
-        queue!(
+        write!(
             out,
+            "{}{}{:.0} wpm   {:.1}% accuracy   {:.1}s{RESET}",
             MoveTo(left, title_y + 2),
-            SetForegroundColor(Color::Green),
-            Print(format!(
-                "{:.0} wpm   {:.1}% accuracy   {:.1}s",
-                app.wpm(),
-                app.accuracy(),
-                app.elapsed().as_secs_f64()
-            )),
-            ResetColor
+            Fg(Color::Green),
+            app.wpm(),
+            app.accuracy(),
+            app.elapsed().as_secs_f64()
         )?;
     }
     draw_code(out, app, left, title_y + 5, height.saturating_sub(10))?;
 
-    let footer_y = height.saturating_sub(2);
-    queue!(out, MoveTo(left, footer_y), SetForegroundColor(Color::DarkGrey))?;
+    write!(out, "{}", MoveTo(left, height.saturating_sub(2)))?;
     match app.screen {
-        Screen::Results => queue!(
+        Screen::Results => write!(
             out,
-            SetForegroundColor(Color::Green),
-            SetAttribute(Attribute::Bold),
-            Print("complete!"),
-            SetAttribute(Attribute::Reset),
-            SetForegroundColor(Color::DarkGrey),
-            Print("  enter/n next   ctrl-r retry   esc quit")
+            "{}{BOLD}complete!{RESET}{}  enter/n next   ctrl-r retry   esc quit",
+            Fg(Color::Green),
+            Fg(Color::DarkGrey)
         )?,
-        Screen::Typing => queue!(
+        Screen::Typing => write!(
             out,
-            Print(if app.autoclose() {
+            "{}{}",
+            Fg(Color::DarkGrey),
+            if app.autoclose() {
                 "newlines, indents + closers are automatic   ctrl-r restart   esc quit"
             } else {
                 "newlines + indentation are automatic   ctrl-r restart   esc quit"
-            })
+            }
         )?,
     }
-    queue!(out, ResetColor)?;
+    write!(out, "{RESET}")?;
     out.flush()
 }
 
@@ -83,12 +67,7 @@ fn draw_code<W: Write>(
     let mut row = 0_u16;
     let mut col = 0_u16;
     let mut line_no = 1;
-    queue!(
-        out,
-        MoveTo(left, top),
-        SetForegroundColor(Color::DarkGrey),
-        Print(format!("{line_no:>2}  "))
-    )?;
+    write!(out, "{}{}{line_no:>2}  ", MoveTo(left, top), Fg(Color::DarkGrey))?;
 
     for (index, ch) in target.iter().copied().enumerate() {
         if row >= max_rows {
@@ -99,48 +78,27 @@ fn draw_code<W: Write>(
             col = 0;
             line_no += 1;
             if row < max_rows {
-                queue!(
-                    out,
-                    MoveTo(left, top + row),
-                    SetForegroundColor(Color::DarkGrey),
-                    Print(format!("{line_no:>2}  "))
-                )?;
+                write!(out, "{}{}{line_no:>2}  ", MoveTo(left, top + row), Fg(Color::DarkGrey))?;
             }
             continue;
         }
-        queue!(out, MoveTo(left + 4 + col, top + row))?;
+        write!(out, "{}", MoveTo(left + 4 + col, top + row))?;
         if let Some(actual) = app.typed.get(index) {
             if *actual == ch {
-                queue!(out, SetForegroundColor(Color::Green), Print(ch))?;
+                write!(out, "{}{ch}", Fg(Color::Green))?;
             } else {
                 let shown = if *actual == '\n' { '↵' } else { *actual };
-                queue!(
-                    out,
-                    SetForegroundColor(Color::Red),
-                    SetAttribute(Attribute::Underlined),
-                    Print(shown),
-                    SetAttribute(Attribute::NoUnderline)
-                )?;
+                write!(out, "{}{UNDERLINE}{shown}{RESET}", Fg(Color::Red))?;
             }
         } else if index == app.typed.len() && app.screen == Screen::Typing {
-            queue!(
-                out,
-                SetForegroundColor(Color::Black),
-                SetBackgroundColor(Color::Cyan),
-                Print(ch),
-                ResetColor
-            )?;
+            write!(out, "{}{}{ch}{RESET}", Fg(Color::Black), Bg(Color::Cyan))?;
         } else if app.auto_closed(&target, index) {
             // Already in place ahead of the cursor, as in an editor.
-            queue!(out, SetForegroundColor(Color::Green), Print(ch))?;
+            write!(out, "{}{ch}", Fg(Color::Green))?;
         } else {
-            queue!(
-                out,
-                SetForegroundColor(syntax_color(&target, index)),
-                Print(ch)
-            )?;
+            write!(out, "{}{ch}", Fg(syntax_color(&target, index)))?;
         }
         col += 1;
     }
-    queue!(out, ResetColor)
+    write!(out, "{RESET}")
 }

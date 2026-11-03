@@ -3,6 +3,9 @@
 A small Monkeytype-style trainer for typing real Rust, with plenty of `::<>`.
 Race the clock on short snippets in your terminal.
 
+No dependencies beyond the standard library. It runs on Linux and macOS (it
+talks to the terminal through libc, so not on Windows).
+
 ## Play
 
 ```sh
