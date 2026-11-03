@@ -1,5 +1,1 @@
 /target/
-
-# local server state (database, SSH host key)
-rusttype.db*
-ssh_host_*
