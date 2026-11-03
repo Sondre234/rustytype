@@ -1,10 +1,9 @@
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::pairs;
-use crate::replay::{Keystroke, Stroke, Submission};
 use crate::snippets::SNIPPETS;
 
-/// Input, independent of whether it came from crossterm or an SSH byte stream.
+/// Input, independent of the terminal backend so the game logic can be tested.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Key {
     Char(char),
@@ -14,12 +13,11 @@ pub enum Key {
     Quit,
 }
 
-/// What the host (local client or SSH session) must do after a key.
+/// What the terminal loop must do after a key.
 #[derive(Debug, PartialEq)]
 pub enum Action {
     None,
     Quit,
-    Submit(Submission),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -39,12 +37,7 @@ pub struct App {
     automatic: Vec<bool>,
     started: Option<Instant>,
     finished_in: Option<Duration>,
-    log: Vec<Keystroke>,
     pub(crate) screen: Screen,
-    /// Who is playing, shown in the header (set by the host).
-    pub identity: Option<String>,
-    /// One line under the results, e.g. the submission outcome.
-    pub status: Option<String>,
 }
 
 impl App {
@@ -65,10 +58,7 @@ impl App {
             automatic: Vec::new(),
             started: None,
             finished_in: None,
-            log: Vec::new(),
             screen: Screen::Typing,
-            identity: None,
-            status: None,
         }
     }
 
@@ -97,8 +87,6 @@ impl App {
         self.automatic.clear();
         self.started = None;
         self.finished_in = None;
-        self.log.clear();
-        self.status = None;
         self.screen = Screen::Typing;
     }
 
@@ -121,55 +109,42 @@ impl App {
             },
             Screen::Typing => match key {
                 Key::Backspace => {
-                    self.backspace(now);
+                    self.backspace();
                     Action::None
                 }
-                Key::Char(ch) => self.push(ch, now),
+                Key::Char(ch) => {
+                    self.push(ch, now);
+                    Action::None
+                }
                 _ => Action::None,
             },
         }
     }
 
-    fn push(&mut self, ch: char, now: Instant) -> Action {
+    fn push(&mut self, ch: char, now: Instant) {
         if self.typed.len() >= self.target().chars().count() {
-            return Action::None;
+            return;
         }
         let started = *self.started.get_or_insert(now);
-        self.log.push(Keystroke {
-            ms: now.saturating_duration_since(started).as_millis() as u32,
-            stroke: Stroke::Char(ch),
-        });
         self.typed.push(ch);
         self.automatic.push(false);
         self.advance_layout();
         if self.typed.len() == self.target().chars().count() {
             self.finished_in = Some(now.saturating_duration_since(started));
             self.screen = Screen::Results;
-            return Action::Submit(Submission {
-                snippet: self.title().to_string(),
-                autoclose: self.autoclose,
-                strokes: self.log.clone(),
-            });
         }
-        Action::None
     }
 
-    fn backspace(&mut self, now: Instant) {
+    fn backspace(&mut self) {
         while self.automatic.last() == Some(&true) {
             self.typed.pop();
             self.automatic.pop();
         }
         self.typed.pop();
         self.automatic.pop();
-        match self.started {
-            Some(started) if !self.typed.is_empty() => self.log.push(Keystroke {
-                ms: now.saturating_duration_since(started).as_millis() as u32,
-                stroke: Stroke::Backspace,
-            }),
-            _ => {
-                self.started = None;
-                self.log.clear();
-            }
+        // Erasing everything is a fresh start, so the clock waits for the next key.
+        if self.typed.is_empty() {
+            self.started = None;
         }
     }
 
@@ -237,10 +212,6 @@ impl App {
             self.correct() as f64 / 5.0 / minutes
         }
     }
-
-    pub(crate) fn next_expected_char(&self) -> Option<char> {
-        self.target().chars().nth(self.typed.len())
-    }
 }
 
 fn opener_of(snippet: usize, autoclose: bool) -> Vec<Option<usize>> {
@@ -278,11 +249,11 @@ mod tests {
     }
 
     #[test]
-    fn backspacing_everything_resets_the_timeline() {
+    fn backspacing_everything_resets_the_timer() {
         let mut app = App::for_snippet(0, false);
         let now = Instant::now();
         app.handle_key(Key::Char('p'), now);
         app.handle_key(Key::Backspace, now);
-        assert!(app.log.is_empty() && app.started.is_none());
+        assert!(app.started.is_none());
     }
 }

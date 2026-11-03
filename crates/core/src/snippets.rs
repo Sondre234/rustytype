@@ -1,6 +1,5 @@
-//! Typing exercises: (title, source). Keep them short (about 6-9 lines), keep
-//! lines under ~76 columns so they fit an 80-column terminal, and keep titles
-//! unique (scores reference them).
+//! Typing exercises: (title, source). Keep them short (about 6-9 lines) and
+//! keep lines under ~76 columns so they fit an 80-column terminal.
 
 pub const SNIPPETS: &[(&str, &str)] = &[
     (
@@ -111,18 +110,13 @@ pub const SNIPPETS: &[(&str, &str)] = &[
     ),
 ];
 
-pub fn index_of(title: &str) -> Option<usize> {
-    SNIPPETS.iter().position(|(name, _)| *name == title)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn titles_are_unique_and_lines_fit_a_small_terminal() {
-        for (index, (title, source)) in SNIPPETS.iter().enumerate() {
-            assert_eq!(index_of(title), Some(index), "duplicate title {title}");
+    fn lines_fit_a_small_terminal() {
+        for (title, source) in SNIPPETS {
             for line in source.lines() {
                 assert!(line.chars().count() <= 76, "{title}: {line}");
             }

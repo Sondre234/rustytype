@@ -1,6 +1,3 @@
-mod api;
-mod login;
-
 use std::{
     io::{self, Write},
     panic,
@@ -16,14 +13,9 @@ use crossterm::{
 };
 use rusttype_core::{Action, App, Key, draw};
 
-const USAGE: &str = "usage: rusttype [login | logout] [--server URL] [--classic]
+const USAGE: &str = "usage: rusttype [--classic]
 
-  (no command)   practice typing Rust; scores are submitted if you are logged in
-  login          sign in with GitHub (device flow) to appear on the leaderboard
-  logout         forget the saved login
-
-  --server URL   leaderboard server (default: $RUSTTYPE_SERVER, else the saved login's)
-  --classic      type closing brackets and quotes yourself, ranked on separate boards";
+  --classic   type closing brackets and quotes yourself (default: they fill in)";
 
 struct TerminalGuard;
 
@@ -42,38 +34,25 @@ impl Drop for TerminalGuard {
     }
 }
 
-fn main() -> anyhow::Result<()> {
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
-    let server_flag = args.iter().position(|arg| arg == "--server").map(|at| {
-        args.remove(at);
-        (at < args.len()).then(|| args.remove(at))
-    });
-    if matches!(server_flag, Some(None)) {
-        anyhow::bail!("--server needs a URL\n\n{USAGE}");
-    }
-    let classic = args.iter().position(|arg| arg == "--classic").map(|at| args.remove(at)).is_some();
-    let credentials = login::load();
-    let server = server_flag
-        .flatten()
-        .or_else(|| std::env::var("RUSTTYPE_SERVER").ok())
-        .or_else(|| credentials.as_ref().map(|saved| saved.server.clone()))
-        .unwrap_or_else(|| api::DEFAULT_SERVER.to_string())
-        .trim_end_matches('/')
-        .to_string();
-
-    match args.first().map(String::as_str) {
-        Some("login") => login::login(&server),
-        Some("logout") => login::logout(),
-        Some("-h" | "--help" | "help") => {
-            println!("{USAGE}");
-            Ok(())
+fn main() -> io::Result<()> {
+    let mut autoclose = true;
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "--classic" => autoclose = false,
+            "-h" | "--help" => {
+                println!("{USAGE}");
+                return Ok(());
+            }
+            other => {
+                eprintln!("unknown argument `{other}`\n\n{USAGE}");
+                std::process::exit(2);
+            }
         }
-        Some(other) => anyhow::bail!("unknown argument `{other}`\n\n{USAGE}"),
-        None => Ok(play(credentials.filter(|saved| saved.server == server), !classic)?),
     }
+    play(autoclose)
 }
 
-fn play(credentials: Option<api::Credentials>, autoclose: bool) -> io::Result<()> {
+fn play(autoclose: bool) -> io::Result<()> {
     let previous_hook = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
@@ -83,7 +62,6 @@ fn play(credentials: Option<api::Credentials>, autoclose: bool) -> io::Result<()
 
     let _guard = TerminalGuard::enter()?;
     let mut app = App::new(autoclose);
-    app.identity = credentials.as_ref().map(|saved| saved.login.clone());
 
     loop {
         render(&app)?;
@@ -92,22 +70,8 @@ fn play(credentials: Option<api::Credentials>, autoclose: bool) -> io::Result<()
         }
         let Event::Key(key) = event::read()? else { continue };
         let Some(key) = map_key(key) else { continue };
-        match app.handle_key(key, Instant::now()) {
-            Action::None => {}
-            Action::Quit => break,
-            Action::Submit(submission) => {
-                app.status = Some(match &credentials {
-                    Some(credentials) => {
-                        app.status = Some("submitting...".into());
-                        render(&app)?;
-                        match api::submit(credentials, &submission) {
-                            Ok(outcome) => outcome.describe(),
-                            Err(error) => format!("not saved: {}", api::explain(&error)),
-                        }
-                    }
-                    None => "not saved. run `rusttype login` to join the leaderboard".into(),
-                });
-            }
+        if app.handle_key(key, Instant::now()) == Action::Quit {
+            break;
         }
     }
     Ok(())

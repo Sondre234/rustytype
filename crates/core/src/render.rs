@@ -13,8 +13,7 @@ use crossterm::{
 use crate::app::{App, Screen};
 use crate::highlight::syntax_color;
 
-/// Draw one full frame. Takes the terminal size explicitly so the same code
-/// serves a local tty and a remote SSH pty.
+/// Draw one full frame for a terminal of the given size.
 pub fn draw<W: Write>(out: &mut W, app: &App, width: u16, height: u16) -> io::Result<()> {
     queue!(out, MoveTo(0, 0), Clear(ClearType::All))?;
 
@@ -30,13 +29,7 @@ pub fn draw<W: Write>(out: &mut W, app: &App, width: u16, height: u16) -> io::Re
         SetAttribute(Attribute::Reset),
         SetForegroundColor(Color::DarkGrey),
     )?;
-    queue!(out, Print(format!("  / {}", app.title())))?;
-    if let Some(identity) = &app.identity {
-        let tag = format!("@{identity}");
-        let x = (left + content_width).saturating_sub(tag.chars().count() as u16);
-        queue!(out, MoveTo(x, title_y), Print(tag))?;
-    }
-    queue!(out, ResetColor)?;
+    queue!(out, Print(format!("  / {}", app.title())), ResetColor)?;
 
     if app.screen == Screen::Results {
         queue!(
@@ -49,16 +42,8 @@ pub fn draw<W: Write>(out: &mut W, app: &App, width: u16, height: u16) -> io::Re
                 app.accuracy(),
                 app.elapsed().as_secs_f64()
             )),
+            ResetColor
         )?;
-        if let Some(status) = &app.status {
-            queue!(
-                out,
-                MoveTo(left, title_y + 3),
-                SetForegroundColor(Color::Yellow),
-                Print(status),
-            )?;
-        }
-        queue!(out, ResetColor)?;
     }
     draw_code(out, app, left, title_y + 5, height.saturating_sub(10))?;
 
