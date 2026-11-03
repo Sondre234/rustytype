@@ -4,44 +4,20 @@ mod highlight;
 mod pairs;
 mod render;
 mod snippets;
+mod tty;
 
 use std::{
-    io::{self, Write},
-    panic,
+    io,
     time::{Duration, Instant},
 };
 
-use crossterm::{
-    cursor::{Hide, Show},
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    execute,
-    style::ResetColor,
-    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
-
-use app::{Action, App, Key};
+use app::{Action, App};
 use render::draw;
+use tty::Terminal;
 
 const USAGE: &str = "usage: rusttype [--classic]
 
   --classic   type closing brackets and quotes yourself (default: they fill in)";
-
-struct TerminalGuard;
-
-impl TerminalGuard {
-    fn enter() -> io::Result<Self> {
-        enable_raw_mode()?;
-        execute!(io::stdout(), EnterAlternateScreen, Hide)?;
-        Ok(Self)
-    }
-}
-
-impl Drop for TerminalGuard {
-    fn drop(&mut self) {
-        let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), Show, LeaveAlternateScreen, ResetColor);
-    }
-}
 
 fn main() -> io::Result<()> {
     let mut autoclose = true;
@@ -62,49 +38,26 @@ fn main() -> io::Result<()> {
 }
 
 fn play(autoclose: bool) -> io::Result<()> {
-    let previous_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |info| {
-        let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), Show, LeaveAlternateScreen, ResetColor);
-        previous_hook(info);
-    }));
-
-    let _guard = TerminalGuard::enter()?;
+    let mut terminal = Terminal::enter()?;
     let mut app = App::new(autoclose);
-
+    let mut frame = Vec::new();
+    // The terminal size the frame on screen was drawn for; `None` once a key
+    // has changed what it should show.
+    let mut drawn_for = None;
     loop {
-        render(&app)?;
-        if !event::poll(Duration::from_millis(100))? {
-            continue;
+        let (width, height) = terminal.size()?;
+        if drawn_for != Some((width, height)) {
+            frame.clear();
+            draw(&mut frame, &app, width, height)?;
+            terminal.show(&frame)?;
+            drawn_for = Some((width, height));
         }
-        let Event::Key(key) = event::read()? else { continue };
-        let Some(key) = map_key(key) else { continue };
-        if app.handle_key(key, Instant::now()) == Action::Quit {
-            break;
+        // Waking up every so often picks up a resize.
+        if let Some(key) = terminal.read_key(Duration::from_millis(100))? {
+            if app.handle_key(key, Instant::now()) == Action::Quit {
+                return Ok(());
+            }
+            drawn_for = None;
         }
-    }
-    Ok(())
-}
-
-fn render(app: &App) -> io::Result<()> {
-    let (width, height) = terminal::size()?;
-    let mut out = io::stdout().lock();
-    draw(&mut out, app, width, height)?;
-    out.flush()
-}
-
-fn map_key(key: KeyEvent) -> Option<Key> {
-    if key.kind == KeyEventKind::Release {
-        return None;
-    }
-    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-    match key.code {
-        KeyCode::Esc => Some(Key::Quit),
-        KeyCode::Char('c') if ctrl => Some(Key::Quit),
-        KeyCode::Char('r') if ctrl => Some(Key::Restart),
-        KeyCode::Char(ch) if !ctrl => Some(Key::Char(ch)),
-        KeyCode::Backspace => Some(Key::Backspace),
-        KeyCode::Enter => Some(Key::Enter),
-        _ => None,
     }
 }

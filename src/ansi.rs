@@ -6,6 +6,10 @@ pub const CLEAR: &str = "\x1b[2J";
 pub const RESET: &str = "\x1b[0m";
 pub const BOLD: &str = "\x1b[1m";
 pub const UNDERLINE: &str = "\x1b[4m";
+pub const ENTER_ALTERNATE_SCREEN: &str = "\x1b[?1049h";
+pub const LEAVE_ALTERNATE_SCREEN: &str = "\x1b[?1049l";
+pub const HIDE_CURSOR: &str = "\x1b[?25l";
+pub const SHOW_CURSOR: &str = "\x1b[?25h";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Color {
